@@ -10,7 +10,7 @@
 
 #include <boost/pool/pool_alloc.hpp>
 
-#include "rdma_log.h"
+#include "rdma_logger.h"
 
 namespace SparkRdmaNetwork {
 

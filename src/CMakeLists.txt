@@ -4,7 +4,7 @@ message(STATUS "start running cmake...")
 
 set(CMAKE_CXX_STANDARD 11)
 
-set(SOURCE_FILES rdma_log.h rdma_log.cpp rdma_memory_pool.h rdma_memory_pool.cpp rdma_thread.cpp rdma_thread.h rdma_infiniband.cpp rdma_infiniband.h)
+set(SOURCE_FILES rdma_logger.h rdma_logger.cpp rdma_memory_pool.h rdma_memory_pool.cpp rdma_infiniband.cpp rdma_infiniband.h rdma_socket.cpp rdma_socket.h)
 
 add_library(SparkRdma SHARED ${SOURCE_FILES})
 

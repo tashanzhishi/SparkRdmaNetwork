@@ -9,7 +9,7 @@
 #include <cerrno>
 #include <infiniband/verbs.h>
 
-#include "rdma_log.h"
+#include "rdma_logger.h"
 
 namespace SparkRdmaNetwork {
 
@@ -70,6 +70,7 @@ public:
     ibv_context *ctx_; // const after construction
 
   private:
+    // no copy and =
     Device(Device &) = delete;
     Device &operator=(Device &) = delete;
   };
@@ -91,9 +92,45 @@ public:
     ibv_pd* const pd_;
 
   private:
+    // no copy and =
     ProtectionDomain(ProtectionDomain&) = delete;
     ProtectionDomain&operator=(ProtectionDomain&) = delete;
   };
+
+
+  class QueuePair {
+  public:
+    QueuePair(RdmaInfiniband& infiniband,
+              ibv_qp_type qp_type,
+              int port_num,
+              ibv_cq *sxcq,
+              ibv_cq *rxcq,
+              uint32_t max_send_wr,
+              uint32_t max_recv_wr);
+    ~QueuePair();
+
+    uint32_t get_init_psn() const;
+    uint32_t get_local_qp_num() const;
+  private:
+    RdmaInfiniband& infiniband_;
+    int qp_type_; // QP type (IBV_QPT_RC, etc.)
+    ibv_context* ctx_;
+    ibv_pd *pd_;
+    ibv_qp *qp_;
+    int port_num_;
+    ibv_cq *sxcq_;
+    ibv_cq *rxcq_;
+    uint32_t init_psn_;
+
+  };
+
+
+  // classs function
+  QueuePair* CreateQueuePair(ibv_qp_type qp_type, int port_num, ibv_cq *sxcq, ibv_cq *rxcq, uint32_t max_send_wr, uint32_t max_recv_wr);
+
+private:
+  Device device_;
+  ProtectionDomain pd_;
 
 };
 

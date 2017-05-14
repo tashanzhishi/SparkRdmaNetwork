@@ -4,7 +4,7 @@
 
 #include "rdma_memory_pool.h"
 
-#include "rdma_log.h"
+#include "rdma_logger.h"
 
 namespace SparkRdmaNetwork {
 
