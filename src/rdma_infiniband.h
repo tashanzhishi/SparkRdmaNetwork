@@ -43,7 +43,6 @@ public:
     DeviceList &operator=(DeviceList &) = delete;
   };
 
-
   class Device {
   public:
     Device() : ctx_(NULL) {
@@ -75,7 +74,6 @@ public:
     Device &operator=(Device &) = delete;
   };
 
-
   class ProtectionDomain {
   public:
     explicit ProtectionDomain(Device& device) : pd_(ibv_alloc_pd(device.ctx_)) {
@@ -97,14 +95,16 @@ public:
     ProtectionDomain&operator=(ProtectionDomain&) = delete;
   };
 
+  class Completion
+
 
   class QueuePair {
   public:
     QueuePair(RdmaInfiniband& infiniband,
               ibv_qp_type qp_type,
               int port_num,
-              ibv_cq *sxcq,
-              ibv_cq *rxcq,
+              ibv_cq *send_cq,
+              ibv_cq *recv_cq,
               uint32_t max_send_wr,
               uint32_t max_recv_wr);
     ~QueuePair();
@@ -118,14 +118,16 @@ public:
     ibv_pd *pd_;
     ibv_qp *qp_;
     int port_num_;
-    ibv_cq *sxcq_;
-    ibv_cq *rxcq_;
+    ibv_cq *send_cq_;
+    ibv_cq *recv_cq_;
     uint32_t init_psn_;
-
   };
 
+  RdmaInfiniband();
+  ~RdmaInfiniband();
 
   // classs function
+  ibv_cq* CreateCompleteionQueue(int min_cqe, int send_or_recv);
   QueuePair* CreateQueuePair(ibv_qp_type qp_type, int port_num, ibv_cq *sxcq, ibv_cq *rxcq, uint32_t max_send_wr, uint32_t max_recv_wr);
 
 private:
