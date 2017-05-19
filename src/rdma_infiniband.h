@@ -7,16 +7,19 @@
 
 #include <cstring>
 #include <cerrno>
+#include <cstdint>
 #include <infiniband/verbs.h>
 
 #include "rdma_logger.h"
 
 namespace SparkRdmaNetwork {
 
+const uint16_t kDefaultPort = 6789;
+const int kMinCqe = 1024;
+
 //
 class RdmaInfiniband {
 public:
-
   class DeviceList {
   public:
     DeviceList() : devices_(ibv_get_device_list(NULL)) {
@@ -95,7 +98,19 @@ public:
     ProtectionDomain&operator=(ProtectionDomain&) = delete;
   };
 
-  class Completion
+  class CompletionQueue {
+  public:
+    CompletionQueue(RdmaInfiniband& infiniband, int min_cqe = kMinCqe);
+    ~CompletionQueue();
+
+  private:
+    ibv_comp_channel* const recv_cq_channel_;
+    ibv_cq *send_cq_;
+    ibv_cq *recv_cq_;
+    // no copy and =
+    CompletionQueue(CompletionQueue&) = delete;
+    CompletionQueue&operator=(CompletionQueue&) = delete;
+  };
 
 
   class QueuePair {
@@ -127,13 +142,12 @@ public:
   ~RdmaInfiniband();
 
   // classs function
-  ibv_cq* CreateCompleteionQueue(int min_cqe, int send_or_recv);
-  QueuePair* CreateQueuePair(ibv_qp_type qp_type, int port_num, ibv_cq *sxcq, ibv_cq *rxcq, uint32_t max_send_wr, uint32_t max_recv_wr);
+  CompletionQueue* CreateCompleteionQueue(int min_cqe);
+  QueuePair* CreateQueuePair(ibv_qp_type qp_type, int port_num, ibv_cq *send_cq, ibv_cq *recv_cq, uint32_t max_send_wr, uint32_t max_recv_wr);
 
 private:
   Device device_;
   ProtectionDomain pd_;
-
 };
 
 } // namespace SparkRdmaNetwork

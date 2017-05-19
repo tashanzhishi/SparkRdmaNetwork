@@ -38,7 +38,7 @@ struct my_allocator {
 std::size_t my_allocator::total_size = 0;
 
 struct data {
-  uint8_t chunk[1024*32];
+  uint8_t chunk[1024];
 };
 #define pool_size 1024
 typedef boost::fast_pool_allocator<data, my_allocator, boost::details::pool::default_mutex, pool_size, 0> fast_allocator;

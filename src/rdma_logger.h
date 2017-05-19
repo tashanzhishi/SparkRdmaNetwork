@@ -8,6 +8,8 @@
 #include <spdlog/spdlog.h>
 #include <memory>
 #include <mutex>
+#include <cstring>
+#include <cerrno>
 
 
 #define RDMA_TRACE(...) do { \

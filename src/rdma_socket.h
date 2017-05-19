@@ -5,72 +5,57 @@
 #ifndef SPARKRDMA_RDMA_LINK_H
 #define SPARKRDMA_RDMA_LINK_H
 
+#include <string>
+
+#include <cstdint>
 #include <sys/socket.h>
-#include <rdma/rdma_cma.h>
+#include <sys/types.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+#include <netdb.h>
 
 #include "rdma_logger.h"
 
 namespace SparkRdmaNetwork {
 
+const int kIpCharSize = 32;
 const uint16_t kDefaultPort = 6789;
-const int kMinCqe = 1024;
 
-class RdmaSocket;
-RdmaSocket* const kConnectEstablished = (RdmaSocket*) 1;
-RdmaSocket* const kDisconnect = (RdmaSocket*) 2;
+struct RdmaConnectionInfo {
+  uint16_t lid;
+  uint32_t qpn;
+  uint32_t psn;
+};
 
-
-// use rdma_cma api to establish connection
 class RdmaSocket {
 public:
-  class QueuePair {
-  public:
-    QueuePair(rdma_cm_id* id, ibv_pd *pd, ibv_qp_type qp_type, int port_num,
-              ibv_cq *send_cq, ibv_cq *recv_cq, uint32_t max_send_wr, uint32_t max_recv_wr);
-    ~QueuePair();
-    uint32_t get_init_psn() const;
-    uint32_t get_local_qp_num() const;
-  private:
-    rdma_cm_id  *id_;
-    ibv_pd      *pd_;
-    int         qp_type_;   // QP type (IBV_QPT_RC, etc.)
-    ibv_qp      *qp_;
-    int         port_num_;
-    ibv_cq      *send_cq_;
-    ibv_cq      *recv_cq_;
-    uint32_t    init_psn_;
-  };
+  static std::string GetIpFromHost(const char *host);
+  static const std::string& get_local_ip() const;
 
-
-  RdmaSocket();
+  RdmaSocket(const char *host = nullptr, const uint16_t port = kDefaultPort);
   ~RdmaSocket();
-  void bind(struct sockaddr *addr);
-  void bind(const char *ip, uint16_t port);
-  void bind();
-  void listen(int backlog);
-  RdmaSocket* accept();
-  void connect();
-  void close();
+
+  void Socket();
+  // for server
+  void Bind();
+  void Listen();
+  RdmaSocket* Accept();
+  // for client
+  void Connect();
+
+  std::string get_ip() const { return ip_; }
+  int WriteInfo(RdmaConnectionInfo& info);
+  int ReadInfo(RdmaConnectionInfo& info);
 
 
-
-  QueuePair* CreateQueuePair(ibv_pd *pd, ibv_qp_type qp_type, int port_num,
-                             ibv_cq *send_cq, ibv_cq *recv_cq, uint32_t max_send_wr, uint32_t max_recv_wr);
-  ibv_cq* CreateCompleteionQueue(int min_cqe, int send_or_recv);
-
-  static void InitInfinaband();
 private:
-  static ibv_context *ctx_;
-  static ibv_pd *pd_;
+  static std::string local_ip_;
 
-  // only use: (verbs, pd), recv_cq_channel, send_cq, recv_cq
-  rdma_cm_id *id_;
-
-  int visit_;
-  // all qp use same cq
-  QueuePair *small_qp_;
-  QueuePair *big_qp_;
-
+  std::string ip_;
+  uint16_t port_;
+  int socket_fd_;
+  struct sockaddr_in addr_;
 };
 
 } // namespace SparkRdmaNetwork

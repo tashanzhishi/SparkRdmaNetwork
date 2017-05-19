@@ -1,14 +1,44 @@
+#include <iostream>
+
 #include "rdma_memory_pool.h"
 
 using namespace SparkRdmaNetwork;
+using namespace std;
 
 void test1() {
-  const std::size_t len = 96;
-  uint8_t *x = (uint8_t *)RdmaMemoryPool::malloc(len);
-  RdmaMemoryPool::free(x, len);
+  //const int len[] = {21, k32B*12-23, k1KB*9-567, k32KB*7-1024*12, k1MB*21-102400};
+  const int len[] = {21, 200, kInitSize32B*32-1, 300, kInitSize32B*32-1, kInitSize32B*31, 1};
+  const int num = sizeof(len)/ sizeof(int);
+  uint8_t *x[num];
+
+  RdmaMemoryPool *pool = RdmaMemoryPool::GetMemoryPool(nullptr);
+
+  for (int i = 0; i < num; ++i) {
+    x[i] = (uint8_t *)pool->malloc(len[i]);
+    cout << (void*)x[i] << endl;
+  }
+
+  pool->print_set();
+  pool->print_map();
+
+  for (int i = 0; i < num; ++i) {
+    cout << pool->get_head_addr(x[i]) << " " << pool->get_mr_from_addr(x[i]) << endl;
+  }
+
+  for (int i = 0; i < num; ++i) {
+    pool->free(x[i], len[i]);
+  }
+
+  pool->print_set();
+  pool->print_map();
+
+  pool->destory();
+
+  pool->print_set();
+  pool->print_map();
 }
 
-void thread_func(int n) {
+/*void thread_func(int n) {
   std::size_t len;
   if (n == 0) {
     len = k32B*5+1;
@@ -45,9 +75,10 @@ void test2() {
   }
   RdmaMemoryPool::destory();
   RDMA_INFO("all thread end");
-}
+}*/
 
 int main() {
-  test2();
+  test1();
+  //test2();
   return 0;
 }

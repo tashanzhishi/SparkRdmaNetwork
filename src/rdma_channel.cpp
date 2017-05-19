@@ -3,3 +3,10 @@
 //
 
 #include "rdma_channel.h"
+
+
+namespace SparkRdmaNetwork {
+
+
+
+} // namespace SparkRdmaNetwork

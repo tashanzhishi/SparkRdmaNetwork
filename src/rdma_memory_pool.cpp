@@ -8,7 +8,29 @@
 
 namespace SparkRdmaNetwork {
 
-void *RdmaMemoryPool::malloc(std::size_t len) {
+RdmaMemoryPool* RdmaMemoryPool::memory_pool_ = nullptr;
+std::size_t RdmaMemoryPool::RdmaAllocator::total_size = 0;
+
+RdmaMemoryPool::RdmaMemoryPool(ibv_pd *pd) {
+  pd_ = pd;
+}
+
+RdmaMemoryPool* RdmaMemoryPool::GetMemoryPool(ibv_pd *pd) {
+  if (memory_pool_ == nullptr) {
+    memory_pool_ = new RdmaMemoryPool(pd);
+  }
+  return memory_pool_;
+}
+
+RdmaMemoryPool* RdmaMemoryPool::GetMemoryPool() {
+  if (memory_pool_ == nullptr) {
+    RDMA_ERROR("please use GetMemoryPool(*pd) first");
+    abort();
+  }
+  return memory_pool_;
+}
+
+void* RdmaMemoryPool::malloc(std::size_t len) {
   RDMA_DEBUG("rdma allocate {} byte", len);
 
   if (len < k1KB) {
@@ -62,6 +84,40 @@ void RdmaMemoryPool::destory() {
   FreePool32KB::purge_memory();
   FreePool1MB::purge_memory();
   FreePool32MB::purge_memory();
+}
+
+void* RdmaMemoryPool::get_head_addr(void *const addr) const {
+  auto head = addr_set_.lower_bound(addr);
+  if (head == addr_set_.end()) {
+    RDMA_ERROR("get head addr of addr_set failed");
+    abort();
+  }
+  return *head;
+}
+
+ibv_mr* RdmaMemoryPool::get_mr_from_addr(void *const addr) const {
+  void *head = get_head_addr(addr);
+  if (addr2mr_.find(head) == addr2mr_.end()) {
+    RDMA_ERROR("find addr failed, because addr not exist in addr2mr");
+    abort();
+  }
+  return addr2mr_.at(head).second;
+}
+
+void RdmaMemoryPool::print_set() {
+  std::cout << "address set: \n";
+  for (auto &x : addr_set_) {
+    std::cout<< x << "\n";
+  }
+  std::cout << std::endl;
+}
+
+void RdmaMemoryPool::print_map() {
+  std::cout << "address -> [len, mr]: \n";
+  for (auto &kv : addr2mr_) {
+    std::cout << kv.first << " -> [" << kv.second.first << ", " << kv.second.second << "]\n";
+  }
+  std::cout << std::endl;
 }
 
 } // namespace SparkRdmaNetwork

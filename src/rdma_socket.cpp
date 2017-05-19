@@ -4,151 +4,131 @@
 
 #include "rdma_socket.h"
 
-#include <cstring>
-#include <cerrno>
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
 
 #include "rdma_logger.h"
 
 
 namespace SparkRdmaNetwork {
 
-ibv_context* RdmaSocket::ctx_ = nullptr;
-ibv_pd *RdmaSocket::pd_ = nullptr;
+std::string RdmaSocket::local_ip_ = "";
 
-void RdmaSocket::InitInfinaband() {
-  RDMA_TRACE("initilize infiniband device ...");
-
-  struct ibv_device **dev_list;
-  struct ibv_device *ib_dev;
-
-  dev_list = ibv_get_device_list(NULL);
-  GPR_ASSERT(dev_list);
-
-  ib_dev = dev_list[0];
-  GPR_ASSERT(ib_dev);
-
-  ctx_ = ibv_open_device(ib_dev);
-  GPR_ASSERT(ctx_);
-
-  pd_ = ibv_alloc_pd(ctx_);
-  GPR_ASSERT(pd_);
-
-  ibv_free_device_list(dev_list);
-  RDMA_TRACE("initilize infiniband device success");
-}
-
-RdmaSocket::QueuePair::QueuePair(rdma_cm_id* id, ibv_pd *pd, ibv_qp_type qp_type, int port_num,
-                     ibv_cq *send_cq, ibv_cq *recv_cq, uint32_t max_send_wr, uint32_t max_recv_wr) :
-    id_(id), pd_(pd), qp_type_(qp_type), qp_(nullptr), port_num_(port_num), send_cq_(send_cq), recv_cq_(recv_cq), init_psn_(0) {
-  RDMA_TRACE("create QueuePair");
-
-  ibv_qp_init_attr init_attr = {
-      .qp_type = qp_type,
-      .sq_sig_all = 1, // ??
-      .send_cq = send_cq,
-      .recv_cq = recv_cq,
-      .cap = {
-          .max_send_wr = max_send_wr,
-          .max_recv_wr = max_recv_wr,
-          .max_send_sge = 1,   // ?????
-          .max_recv_sge = 1,  // ????
-          .max_inline_data = 256,
-      },
-  };
-
-  if (rdma_create_qp(id, pd, &init_attr) != 0) {
-    RDMA_ERROR("rdma_create_qp error: {}", strerror(errno));
+std::string RdmaSocket::GetIpFromHost(const char *host) {
+  if (host == nullptr)
+    return "";
+  struct hostent *he = gethostbyname(host);
+  if (he == NULL) {
+    RDMA_ERROR("gethostbyname: {} failed", host);
     abort();
   }
-  qp_ = id->qp;
+  char ip_str[kIpCharSize] = {'\0'};
+  inet_ntop(he->h_addrtype, he->h_addr, ip_str, kIpCharSize);
+  std::string ip(ip_str);
+  return ip;
 }
 
-
-RdmaSocket::RdmaSocket() {
-  id_->verbs = ctx_;
-  id_->pd = pd_;
-
-  id_->recv_cq_channel = ibv_create_comp_channel(id_->verbs);
-  GPR_ASSERT(id_->recv_cq_channel);
-
-  id_->send_cq = ibv_create_cq(id_->verbs, kMinCqe, nullptr, nullptr, 0);
-  GPR_ASSERT(id_->send_cq);
-
-  id_->recv_cq = ibv_create_cq(id_->verbs, kMinCqe, nullptr, id_->recv_cq_channel, 0);
-  GPR_ASSERT(id_->recv_cq);
-
-  if (ibv_req_notify_cq(id_->recv_cq, 0) != 0) {
-    RDMA_ERROR("ibv_req_notify_cq error, %s", strerror(errno));
-    abort();
+const std::string& RdmaSocket::get_local_ip() const {
+  if (local_ip_ == "") {
+    char host_name[kIpCharSize] = {'\0'};
+    if (gethostname(host_name, sizeof(host_name)) != 0) {
+      RDMA_ERROR("gethostname error: {}", strerror(errno));
+      abort();
+    }
+    local_ip_ = GetIpFromHost(host_name);
   }
+  return local_ip_;
+};
+
+
+RdmaSocket::RdmaSocket(const char *host, const uint16_t port) {
+  port_ = port;
+  ip_ = GetIpFromHost(host);
+
+  memset(&addr_, 0, sizeof(addr_));
+  addr_.sin_family = AF_INET;
+  addr_.sin_port = htons(port);
+  if (host != nullptr) { // client
+    addr_.sin_addr.s_addr = inet_addr(ip_.c_str());
+  } else { // server
+    addr_.sin_addr.s_addr = htonl(INADDR_ANY);
+  }
+
+  socket_fd_ = 0;
 }
 
 RdmaSocket::~RdmaSocket() {
-
+  close(socket_fd_);
 }
 
-void RdmaSocket::bind(struct sockaddr *addr) {
-  if (rdma_bind_addr(id_, addr) != 0) {
-    RDMA_ERROR("rdma_bind_addr error: {}", strerror(errno));
+void RdmaSocket::Socket() {
+  socket_fd_ = socket(AF_INET, SOCK_STREAM, 0);
+  if (socket_fd_ < 0) {
+    RDMA_ERROR("{} socket error: {}", ip_, strerror(errno));
     abort();
   }
-}
+  RDMA_TRACE("socket success");
 
-void RdmaSocket::bind(const char *ip, uint16_t port) {
-  struct sockaddr_in addr;
-  memset(&addr, 0, sizeof(addr));
-  addr.sin_family = AF_INET;
-  addr.sin_port = htons(port);
-  addr.sin_addr.s_addr = inet_addr(ip);
-
-  bind((struct sockaddr *)&addr);
-}
-
-void RdmaSocket::bind() {
-  bind("0.0.0.0", kDefaultPort);
-}
-
-void RdmaSocket::listen(int backlog = 16) {
-  if (rdma_listen(id_, backlog) != 0 ) {
-    RDMA_ERROR("rdma_listen error: {}", strerror(errno));
-    abort();
-  }
-}
-
-
-
-
-
-RdmaSocket::QueuePair* RdmaSocket::CreateQueuePair(ibv_pd *pd, ibv_qp_type qp_type, int port_num,
-                                                   ibv_cq *send_cq, ibv_cq *recv_cq,
-                                                   uint32_t max_send_wr, uint32_t max_recv_wr) {
-  return new QueuePair(*this, pd, qp_type, port_num, send_cq, recv_cq, max_send_wr, max_recv_wr);
-}
-
-ibv_cq* RdmaSocket::CreateCompleteionQueue(int min_cqe, int send_or_recv) {
-  if (send_or_recv == 1) { // recv
-    id_->recv_cq_channel = ibv_create_comp_channel(id_->verbs);
-    GPR_ASSERT(id_->recv_cq_channel);
-    id_->recv_cq = ibv_create_cq(id_->verbs, min_cqe, nullptr, id_->recv_cq_channel, 0);
-    GPR_ASSERT(id_->recv_cq);
-    if (ibv_req_notify_cq(id_->recv_cq, 0) != 0) {
-      RDMA_ERROR("ibv_req_notify_cq error: {}", strerror(errno));
+  // server
+  if (ip_ == "") {
+    int reuse = 1;
+    if (setsockopt(socket_fd_, SOL_SOCKET, SO_REUSEADDR, (char *)&reuse, sizeof(int)) < 0) {
+      RDMA_ERROR("setsockopt reuse error: {}", strerror(errno));
       abort();
     }
-    return id_->recv_cq;
-  } else if (send_or_recv == 0) { // send
-    id_->send_cq = ibv_create_cq(id_->verbs, min_cqe, nullptr, nullptr, 0);
-    GPR_ASSERT(id_->send_cq);
-    return id_->send_cq;
-  } else {
-    RDMA_ERROR("CreateCompleteionQueue min_cqe must is 0 or 1");
+    RDMA_TRACE("setsockopt reuse success");
+  }
+}
+
+void RdmaSocket::Bind() {
+  if (bind(socket_fd_, static_cast<struct sockaddr*>(&addr_), sizeof(addr_)) != 0) {
+    RDMA_ERROR("bind error: {}", strerror(errno));
     abort();
   }
+  RDMA_TRACE("bind success");
+}
 
+void RdmaSocket::Listen() {
+  if (listen(socket_fd_, 1024) != 0) {
+    RDMA_ERROR("listen error: {}", strerror(errno));
+    abort();
+  }
+  RDMA_TRACE("listen success");
+}
+
+RdmaSocket* RdmaSocket::Accept() {
+
+}
+
+void RdmaSocket::Connect() {
+  if (connect(socket_fd_, static_cast<struct sockaddr*>(&addr_), sizeof(addr_)) != 0) {
+    RDMA_ERROR("connect {} error: {}", ip_,strerror(errno));
+    abort();
+  }
+  RDMA_TRACE("connect {} success", ip_);
+}
+
+int RdmaSocket::WriteInfo(RdmaConnectionInfo& info) {
+  RdmaConnectionInfo tmp = {
+      .lid = htons(info.lid),
+      .psn = htonl(info.psn),
+      .qpn = htonl(info.qpn),
+  };
+  if (write(socket_fd_, &tmp, sizeof(tmp)) < 0) {
+    RDMA_ERROR("write infomation to {} failed", ip_);
+    return -1;
+  }
+  return 0;
+}
+
+int RdmaSocket::ReadInfo(RdmaConnectionInfo& info) {
+  RdmaConnectionInfo tmp;
+  if (read(socket_fd_, &tmp, sizeof(tmp)) < 0) {
+    RDMA_ERROR("read information from {} failed", ip_);
+    return -1;
+  }
+  info.lid = ntohs(tmp.lid);
+  info.psn = ntohl(tmp.psn);
+  info.qpn = ntohl(tmp.qpn);
+  return 0;
 }
 
 } // namespace SparkRdmaNetwork
