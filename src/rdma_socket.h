@@ -15,6 +15,7 @@
 #include <unistd.h>
 #include <netdb.h>
 
+#include "rdma_protocol.h"
 #include "rdma_logger.h"
 
 namespace SparkRdmaNetwork {
@@ -22,18 +23,13 @@ namespace SparkRdmaNetwork {
 const int kIpCharSize = 32;
 const uint16_t kDefaultPort = 6789;
 
-struct RdmaConnectionInfo {
-  uint16_t lid;
-  uint32_t qpn;
-  uint32_t psn;
-};
 
 class RdmaSocket {
 public:
   static std::string GetIpFromHost(const char *host);
   static const std::string& get_local_ip() const;
 
-  RdmaSocket(const char *host = nullptr, const uint16_t port = kDefaultPort);
+  RdmaSocket(const std::string ip = "", const uint16_t port = kDefaultPort);
   ~RdmaSocket();
 
   void Socket();

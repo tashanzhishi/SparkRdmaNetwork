@@ -1,0 +1,20 @@
+//
+// Created by wyb on 17-5-19.
+//
+
+#ifndef SPARKRDMA_RDMA_THREAD_H
+#define SPARKRDMA_RDMA_THREAD_H
+
+#include <boost/thread.hpp>
+#include <boost/thread/shared_mutex.hpp>
+
+
+typedef boost::shared_lock<boost::shared_mutex> ReadLock;
+typedef boost::unique_lock<boost::shared_mutex> WriteLock;
+
+namespace SparkRdmaNetwork {
+
+
+} // namespace SparkRdmaNetwork
+
+#endif //SPARKRDMA_RDMA_THREAD_H

@@ -10,6 +10,9 @@
 
 namespace SparkRdmaNetwork {
 
+// -------------------
+// - CompletionQueue -
+// -------------------
 RdmaInfiniband::CompletionQueue::CompletionQueue(RdmaInfiniband &infiniband, int min_cqe = kMinCqe) :
     recv_cq_channel_(ibv_create_comp_channel(infiniband.device_.ctx_)) {
   RDMA_TRACE("construct CompletionQueue");
@@ -35,14 +38,22 @@ RdmaInfiniband::CompletionQueue::~CompletionQueue() {
   ibv_destroy_cq(recv_cq_);
   ibv_destroy_cq(send_cq_);
 }
+// -------------------
+// - CompletionQueue -
+// -------------------
 
-RdmaInfiniband::QueuePair::QueuePair(RdmaInfiniband &infiniband, ibv_qp_type qp_type, int port_num, ibv_cq *send_cq,
-                                     ibv_cq *recv_cq, uint32_t max_send_wr, uint32_t max_recv_wr) :
-    infiniband_(infiniband), qp_type_(qp_type), ctx_(infiniband.device_.ctx_), pd_(infiniband.pd_.pd_), qp_(nullptr),
+
+// -------------
+// - QueuePair -
+// -------------
+RdmaInfiniband::QueuePair::QueuePair(RdmaInfiniband &infiniband, ibv_qp_type qp_type,
+                                     ibv_cq *send_cq, ibv_cq *recv_cq,
+                                     uint32_t max_send_wr, uint32_t max_recv_wr) :
+    infiniband_(infiniband), qp_type_(qp_type), ctx_(infiniband.device_.ctx_), pd_(infiniband.pd_.pd_), lid_(0),
+    small_qp_(nullptr), big_qp_(nullptr),
     send_cq_(send_cq), recv_cq_(recv_cq), init_psn_(0) {
   RDMA_TRACE("create QueuePair");
 
-  GPR_ASSERT(qp_type == IBV_QPT_RC);
   ibv_qp_init_attr init_attr = {
       .qp_type = qp_type,
       .sq_sig_all = 1, // ??
@@ -57,23 +68,249 @@ RdmaInfiniband::QueuePair::QueuePair(RdmaInfiniband &infiniband, ibv_qp_type qp_
       },
   };
 
-  qp_ = ibv_create_qp(pd_, &init_attr);
-  GPR_ASSERT(qp_);
+  small_qp_ = ibv_create_qp(pd_, &init_attr);
+  GPR_ASSERT(small_qp_);
+  big_qp_ = ibv_create_qp(pd_, &init_attr);
+  GPR_ASSERT(big_qp_);
+  ModifyQpToInit();
+
+  ibv_port_attr port_attr;
+  if (ibv_query_port(infiniband.device_.ctx_, kIbPortNum, &port_attr) < 0) {
+    RDMA_ERROR("ibv_query_port error: {}", strerror(errno));
+    abort();
+  }
+  lid_ = port_attr.lid;
 }
 
 RdmaInfiniband::QueuePair::~QueuePair() {
   RDMA_TRACE("destroy QueuePair");
-  ibv_destroy_qp(qp_);
+  ibv_destroy_qp(small_qp_);
+  ibv_destroy_qp(big_qp_);
 }
 
 uint32_t RdmaInfiniband::QueuePair::get_init_psn() const {
   return init_psn_;
 }
 
-uint32_t RdmaInfiniband::QueuePair::get_local_qp_num() const {
-  return qp_->qp_num;
+uint32_t RdmaInfiniband::QueuePair::get_local_qp_num(bool is_small) const {
+  return is_small ? small_qp_->qp_num : big_qp_->qp_num;
 }
 
+uint16_t RdmaInfiniband::QueuePair::get_local_lid() const {
+  return lid_;
+}
+
+int RdmaInfiniband::QueuePair::ModifyQpToInit() {
+  ibv_qp_attr init_attr;
+  memset(&init_attr, 0, sizeof(init_attr));
+  init_attr.qp_state        = IBV_QPS_INIT;
+  init_attr.pkey_index      = 0;
+  init_attr.port_num        = kIbPortNum;
+  init_attr.qp_access_flags = kRdmaMemoryFlag;
+  int init_flags = IBV_QP_STATE | IBV_QP_PKEY_INDEX | IBV_QP_PORT | IBV_QP_ACCESS_FLAGS;
+
+  if (ibv_modify_qp(small_qp_, &init_attr, init_flags) < 0 ||
+      ibv_modify_qp(big_qp_, &init_attr, init_flags) < 0) {
+    RDMA_ERROR("modify_qp_to_init: failed to modify QP to INIT, {}", strerror(errno));
+    return -1;
+  }
+  return 0;
+}
+
+int RdmaInfiniband::QueuePair::ModifyQpToRTS() {
+  ibv_qp_attr rts_attr;
+  memset(&rts_attr, 0, sizeof(rts_attr));
+  rts_attr.qp_state = IBV_QPS_RTS;
+  rts_attr.timeout  = 0x14;
+  rts_attr.retry_cnt = 0x07;
+  rts_attr.rnr_retry = 0x07;
+  rts_attr.max_rd_atomic = 0; // rc must add it
+  rts_attr.sq_psn   = init_psn_;
+
+  int rts_flags = IBV_QP_STATE | IBV_QP_SQ_PSN | IBV_QP_TIMEOUT | IBV_QP_RETRY_CNT | IBV_QP_RNR_RETRY | IBV_QP_MAX_QP_RD_ATOMIC;
+  if (ibv_modify_qp(small_qp_, &rts_attr, rts_flags) < 0 ||
+      ibv_modify_qp(big_qp_, &rts_attr, rts_flags) < 0) {
+    RDMA_ERROR("modify QP to RTS error, {}", strerror(errno));
+    return -1;
+  }
+  return 0;
+}
+
+int RdmaInfiniband::QueuePair::ModifyQpToRTR(RdmaConnectionInfo &info) {
+  ibv_qp_attr rtr_attr;
+  memset(&rtr_attr, 0, sizeof(rtr_attr));
+  rtr_attr.qp_state = IBV_QPS_RTR;
+  rtr_attr.path_mtu = IBV_MTU_4096;
+  rtr_attr.min_rnr_timer = 0x14;
+  rtr_attr.max_dest_rd_atomic = 0; // rc must add it
+  rtr_attr.dest_qp_num = info.small_qpn;
+  rtr_attr.rq_psn = info.psn;
+  rtr_attr.ah_attr.is_global = 0;
+  rtr_attr.ah_attr.dlid = info.lid;
+  rtr_attr.ah_attr.sl = 0;
+  rtr_attr.ah_attr.src_path_bits = 0;
+  rtr_attr.ah_attr.port_num = kIbPortNum;
+
+  int rtr_flags = IBV_QP_STATE | IBV_QP_AV | IBV_QP_PATH_MTU | IBV_QP_DEST_QPN |
+                  IBV_QP_RQ_PSN | IBV_QP_MIN_RNR_TIMER | IBV_QP_MAX_DEST_RD_ATOMIC;
+  if (ibv_modify_qp(small_qp_, &rtr_attr, rtr_flags) < 0) {
+    RDMA_ERROR("modify QP to RTS error, {}", strerror(errno));
+    return -1;
+  }
+  rtr_attr.dest_qp_num = info.big_qpn;
+  if (ibv_modify_qp(big_qp_, &rtr_attr, rtr_flags) < 0) {
+    RDMA_ERROR("modify QP to RTS error, {}", strerror(errno));
+    return -1;
+  }
+  return 0;
+}
+
+int RdmaInfiniband::QueuePair::PostReceive(RdmaChannel *channel, bool is_small) {
+  BufferDescriptor *buffer = new BufferDescriptor();
+  buffer->buffer_ = (uint8_t *)RMALLOC(k1KB);
+  buffer->bytes_ = k1KB;
+  buffer->mr_ = GET_MR(buffer->buffer_);
+  buffer->channel_ = channel;
+
+  ibv_sge sge = {
+      .addr = (uint64_t)buffer->buffer_,
+      .length = buffer->bytes_,
+      .lkey = buffer->mr_->lkey,
+  };
+
+  ibv_recv_wr recv_wr = {
+      .wr_id = (uint64_t)buffer,
+      .sg_list = &sge,
+      .num_sge = 1,
+  };
+
+  ibv_recv_wr *bad = nullptr;
+  if (ibv_post_recv(is_small ? small_qp_ : big_qp_, &recv_wr, &bad) < 0) {
+    RDMA_ERROR("ibv_post_recv error, {}", strerror(errno));
+    return -1;
+  }
+  return 0;
+}
+
+int RdmaInfiniband::QueuePair::PostReceiveWithNum(RdmaChannel *channel, bool is_small, int num) {
+  ibv_sge *sge = new ibv_sge[num];
+  ibv_recv_wr *recv_wr = new ibv_recv_wr[num];
+  ibv_recv_wr *bad = new ibv_recv_wr[num];
+
+  for (int i = 0; i < num; ++i) {
+    BufferDescriptor *buffer = new BufferDescriptor();
+    buffer->buffer_ = (uint8_t *)RMALLOC(k1KB);
+    buffer->bytes_ = k1KB;
+    buffer->mr_ = GET_MR(buffer->buffer_);
+    buffer->channel_ = channel;
+
+    sge[i].addr = (uint64_t)buffer->buffer_;
+    sge[i].length = buffer->bytes_;
+    sge[i].lkey = buffer->mr_->lkey;
+
+    recv_wr[i].wr_id = (uint64_t)buffer;
+    recv_wr[i].sg_list = &sge[i];
+    recv_wr[i].num_sge = 1;
+    recv_wr[i].next = nullptr;
+  }
+
+  for (int i = 0; i < num; ++i) {
+    if (ibv_post_recv(is_small ? small_qp_ : big_qp_, &recv_wr[i], &bad) < 0) {
+      RDMA_ERROR("ibv_post_recv error, {}", strerror(errno));
+      return -1;
+    }
+  }
+
+  delete[] sge;
+  delete[] recv_wr;
+  delete[] bad;
+
+  return 0;
+}
+
+void RdmaInfiniband::QueuePair::PreReceive(RdmaChannel *channel, int small, int big) {
+  if (PostReceiveWithNum(channel, 1, small) < 0) {
+    RDMA_ERROR("PreReceive small qp failed");
+    abort();
+  }
+  if (PostReceiveWithNum(channel, 0, big) < 0) {
+    RDMA_ERROR("PreReceive big qp failed");
+    abort();
+  }
+}
+
+int RdmaInfiniband::QueuePair::PostSendAndWait(BufferDescriptor *buf, int num, bool is_small) {
+  ibv_sge sge[num];
+  for (int i = 0; i < num; ++i) {
+    sge[i].addr = (uint64_t)buf[i].buffer_;
+    sge[i].length = buf[i].bytes_;
+    sge[i].lkey = buf[i].mr_->lkey;
+  }
+  ibv_send_wr send_wr = {
+      .wr_id = 0,
+      .sg_list = sge,
+      .num_sge = num,
+      .opcode = IBV_WR_SEND,
+      .send_flags = IBV_SEND_SIGNALED,
+  };
+  ibv_send_wr *bad;
+  {
+    std::lock_guard lock(send_lock);
+    if (ibv_post_send(is_small ? small_qp_ : big_qp_, &send_wr, &bad) < 0) {
+     RDMA_ERROR("ibv_post_send error, {}", strerror(errno));
+      return -1;
+    }
+    ibv_wc wc;
+    while (ibv_poll_cq(send_cq_, 1, &wc) < 1)
+      ;
+    if (wc.status != IBV_WC_SUCCESS) {
+      RDMA_ERROR("ibv_poll_cq error: {}", WcStatusToString(wc.status));
+      return -1;
+    }
+  }
+  for (int i = 0; i < num; ++i) {
+    RFREE(buf[i].buffer_, buf[i].bytes_);
+  }
+  return 0;
+}
+
+const char* RdmaInfiniband::QueuePair::WcStatusToString(int status) {
+  static const char *wc_string[] = {
+      "IBV_WC_SUCCESS",
+      "IBV_WC_LOC_LEN_ERR",
+      "IBV_WC_LOC_QP_OP_ERR",
+      "IBV_WC_LOC_EEC_OP_ERR",
+      "IBV_WC_LOC_PROT_ERR",
+      "IBV_WC_WR_FLUSH_ERR",
+      "IBV_WC_MW_BIND_ERR",
+      "IBV_WC_BAD_RESP_ERR",
+      "IBV_WC_LOC_ACCESS_ERR",
+      "IBV_WC_REM_INV_REQ_ERR",
+      "IBV_WC_REM_ACCESS_ERR",
+      "IBV_WC_REM_OP_ERR",
+      "IBV_WC_RETRY_EXC_ERR",
+      "IBV_WC_RNR_RETRY_EXC_ERR",
+      "IBV_WC_LOC_RDD_VIOL_ERR",
+      "IBV_WC_REM_INV_RD_REQ_ERR",
+      "IBV_WC_REM_ABORT_ERR",
+      "IBV_WC_INV_EECN_ERR",
+      "IBV_WC_INV_EEC_STATE_ERR",
+      "IBV_WC_FATAL_ERR",
+      "IBV_WC_RESP_TIMEOUT_ERR",
+      "IBV_WC_GENERAL_ERR",
+  };
+  if (status < IBV_WC_SUCCESS || status > IBV_WC_GENERAL_ERR)
+    return "<status out of range!>";
+  return wc_string[status];
+}
+// -------------
+// - QueuePair -
+// -------------
+
+
+// ------------------
+// - RdmaInfiniband -
+// ------------------
 RdmaInfiniband::RdmaInfiniband() : device_(), pd_(device_) {
   RDMA_TRACE("construct RdmaInfiniband");
   RdmaMemoryPool::GetMemoryPool(pd_.pd_);
@@ -87,9 +324,17 @@ RdmaInfiniband::CompletionQueue* RdmaInfiniband::CreateCompleteionQueue(int min_
   return new CompletionQueue(*this);
 }
 
-RdmaInfiniband::QueuePair* RdmaInfiniband::CreateQueuePair(ibv_qp_type qp_type, int port_num, ibv_cq *send_cq,
-                                                           ibv_cq *recv_cq, uint32_t max_send_wr, uint32_t max_recv_wr) {
-  return new QueuePair(*this, qp_type, port_num, send_cq, recv_cq, max_send_wr, max_recv_wr);
+RdmaInfiniband::QueuePair* RdmaInfiniband::CreateQueuePair(ibv_cq *send_cq, ibv_cq *recv_cq, ibv_qp_type qp_type,
+                                                           uint32_t max_send_wr, uint32_t max_recv_wr) {
+  return new QueuePair(*this, qp_type, send_cq, recv_cq, max_send_wr, max_recv_wr);
 }
+RdmaInfiniband::QueuePair * RdmaInfiniband::CreateQueuePair(CompletionQueue *cq, ibv_qp_type qp_type,
+                                                            uint32_t max_send_wr, uint32_t max_recv_wr) {
+  CreateQueuePair(cq->get_send_cq(), cq->get_recv_cq(), qp_type, max_send_wr, max_recv_wr);
+}
+// ------------------
+// - RdmaInfiniband -
+// ------------------
+
 
 } // namespace SparkRdmaNetwork

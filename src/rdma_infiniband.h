@@ -10,16 +10,25 @@
 #include <cstdint>
 #include <infiniband/verbs.h>
 
+#include <memory>
+
+#include "rdma_protocol.h"
 #include "rdma_logger.h"
 
 namespace SparkRdmaNetwork {
 
 const uint16_t kDefaultPort = 6789;
 const int kMinCqe = 1024;
+const int kMaxWr = 1024;
+const uint8_t kIbPortNum = 1;
+const int kSmallPreReceive = 2048; // 1kb
+const int kBigPreReceive = 128;    // 1kb
 
 //
 class RdmaInfiniband {
 public:
+
+
   class DeviceList {
   public:
     DeviceList() : devices_(ibv_get_device_list(NULL)) {
@@ -45,6 +54,7 @@ public:
     DeviceList(DeviceList &) = delete;
     DeviceList &operator=(DeviceList &) = delete;
   };
+
 
   class Device {
   public:
@@ -77,6 +87,7 @@ public:
     Device &operator=(Device &) = delete;
   };
 
+
   class ProtectionDomain {
   public:
     explicit ProtectionDomain(Device& device) : pd_(ibv_alloc_pd(device.ctx_)) {
@@ -98,10 +109,28 @@ public:
     ProtectionDomain&operator=(ProtectionDomain&) = delete;
   };
 
+  class RdmaChannel;
+  struct BufferDescriptor {
+    BufferDescriptor(uint8_t *buffer, uint32_t bytes, ibv_mr *mr, RdmaChannel *channel) :
+        buffer_(buffer), bytes_(bytes), mr_(mr), channel_(channel){}
+    BufferDescriptor() :
+        buffer_(nullptr), bytes_(0), mr_(nullptr), channel_(nullptr){}
+
+    uint8_t *buffer_;
+    uint32_t bytes_;
+    ibv_mr *mr_;
+    RdmaChannel *channel_;
+  private:
+    BufferDescriptor(BufferDescriptor&) = delete;
+    BufferDescriptor&operator=(BufferDescriptor&) = delete;
+  };
+
   class CompletionQueue {
   public:
     CompletionQueue(RdmaInfiniband& infiniband, int min_cqe = kMinCqe);
     ~CompletionQueue();
+    ibv_cq* get_send_cq() { return send_cq_;}
+    ibv_cq* get_recv_cq() { return recv_cq_;}
 
   private:
     ibv_comp_channel* const recv_cq_channel_;
@@ -117,7 +146,6 @@ public:
   public:
     QueuePair(RdmaInfiniband& infiniband,
               ibv_qp_type qp_type,
-              int port_num,
               ibv_cq *send_cq,
               ibv_cq *recv_cq,
               uint32_t max_send_wr,
@@ -125,27 +153,58 @@ public:
     ~QueuePair();
 
     uint32_t get_init_psn() const;
-    uint32_t get_local_qp_num() const;
+    uint32_t get_local_qp_num(bool is_small) const;
+    uint16_t get_local_lid() const;
+    int ModifyQpToInit();
+    int ModifyQpToRTS();
+    int ModifyQpToRTR(RdmaConnectionInfo& info);
+    void PreReceive(RdmaChannel *channel, int small = kSmallPreReceive, int big = kBigPreReceive);
+    int PostReceiveWithNum(RdmaChannel *channel, bool is_small, int num);
+    int PostReceive(RdmaChannel *channel, bool is_small);
+    int PostSendAndWait(BufferDescriptor *buf, int num, bool is_small);
+    const char* WcStatusToString(int status);
   private:
     RdmaInfiniband& infiniband_;
     int qp_type_; // QP type (IBV_QPT_RC, etc.)
     ibv_context* ctx_;
     ibv_pd *pd_;
-    ibv_qp *qp_;
-    int port_num_;
+    uint16_t lid_;
+
+    ibv_qp *small_qp_;
+    ibv_qp *big_qp_;
+
     ibv_cq *send_cq_;
+    std::mutex send_lock;
     ibv_cq *recv_cq_;
     uint32_t init_psn_;
   };
 
+
+  static RdmaInfiniband* GetRdmaInfiniband() {
+    if (infiniband_ == nullptr) {
+      std::lock_guard lock(lock_);
+      if (infiniband_ == nullptr)
+        infiniband_ = new RdmaInfiniband();
+    }
+    return infiniband_;
+  };
+
+  // classs function
+  CompletionQueue* CreateCompleteionQueue(int min_cqe = kMinCqe);
+  QueuePair* CreateQueuePair(ibv_cq *send_cq, ibv_cq *recv_cq,
+                             ibv_qp_type qp_type = IBV_QPT_RC,
+                             uint32_t max_send_wr = kMaxWr, uint32_t max_recv_wr = kMaxWr);
+  QueuePair* CreateQueuePair(CompletionQueue* cq,
+                             ibv_qp_type qp_type = IBV_QPT_RC,
+                             uint32_t max_send_wr = kMaxWr, uint32_t max_recv_wr = kMaxWr);
+
+private:
+  static RdmaInfiniband *infiniband_;
+  static std::mutex lock_;
+
   RdmaInfiniband();
   ~RdmaInfiniband();
 
-  // classs function
-  CompletionQueue* CreateCompleteionQueue(int min_cqe);
-  QueuePair* CreateQueuePair(ibv_qp_type qp_type, int port_num, ibv_cq *send_cq, ibv_cq *recv_cq, uint32_t max_send_wr, uint32_t max_recv_wr);
-
-private:
   Device device_;
   ProtectionDomain pd_;
 };

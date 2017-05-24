@@ -39,14 +39,14 @@ const std::string& RdmaSocket::get_local_ip() const {
 };
 
 
-RdmaSocket::RdmaSocket(const char *host, const uint16_t port) {
+RdmaSocket::RdmaSocket(const std::string ip, const uint16_t port) {
   port_ = port;
-  ip_ = GetIpFromHost(host);
+  ip_ = ip;
 
   memset(&addr_, 0, sizeof(addr_));
   addr_.sin_family = AF_INET;
   addr_.sin_port = htons(port);
-  if (host != nullptr) { // client
+  if (ip != nullptr) { // client
     addr_.sin_addr.s_addr = inet_addr(ip_.c_str());
   } else { // server
     addr_.sin_addr.s_addr = htonl(INADDR_ANY);
@@ -95,7 +95,21 @@ void RdmaSocket::Listen() {
 }
 
 RdmaSocket* RdmaSocket::Accept() {
+  struct sockaddr_in addr, client_addr;
+  socklen_t socklen = sizeof(addr);
+  int fd = accept(socket_fd_, (struct sockaddr *)&addr, &socklen);
+  if (fd == -1) {
+    RDMA_ERROR("accept error, {}", strerror(errno));
+    return nullptr;
+  }
 
+  char remote_ip[kIpCharSize] = {'\0'};
+  memcpy(&client_addr, &addr, sizeof(addr));
+  strcpy(remote_ip, inet_ntoa(client_addr.sin_addr));
+  RDMA_ERROR("accept %s, fd=%d", remote_ip, fd);
+
+  RdmaSocket *client = new RdmaSocket(remote_ip);
+  return client;
 }
 
 void RdmaSocket::Connect() {
@@ -110,7 +124,8 @@ int RdmaSocket::WriteInfo(RdmaConnectionInfo& info) {
   RdmaConnectionInfo tmp = {
       .lid = htons(info.lid),
       .psn = htonl(info.psn),
-      .qpn = htonl(info.qpn),
+      .small_qpn = htonl(info.small_qpn),
+      .big_qpn = htonl(info.big_qpn)
   };
   if (write(socket_fd_, &tmp, sizeof(tmp)) < 0) {
     RDMA_ERROR("write infomation to {} failed", ip_);
@@ -127,7 +142,8 @@ int RdmaSocket::ReadInfo(RdmaConnectionInfo& info) {
   }
   info.lid = ntohs(tmp.lid);
   info.psn = ntohl(tmp.psn);
-  info.qpn = ntohl(tmp.qpn);
+  info.small_qpn = ntohl(tmp.small_qpn);
+  info.big_qpn = ntohl(tmp.big_qpn);
   return 0;
 }
 

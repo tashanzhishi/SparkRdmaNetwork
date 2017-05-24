@@ -16,6 +16,11 @@
 #include <iostream>
 
 #include "rdma_logger.h"
+#include "rdma_protocol.h"
+
+#define RMALLOC(len) (RdmaMemoryPool::GetMemoryPool()->malloc(len))
+#define RFREE(ptr, len) (RdmaMemoryPool::GetMemoryPool()->free(ptr, len))
+#define GET_MR(ptr) (RdmaMemoryPool::GetMemoryPool()->get_mr_from_addr(ptr))
 
 //#define ibv_pd void
 //#define ibv_mr void
@@ -44,7 +49,6 @@ inline std::size_t len2num(std::size_t len, std::size_t size) {
   return (len + size - 1) / size;
 }
 
-const int kRdmaMemoryFlag = IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_WRITE;
 
 
 // this is a singleton instance class
