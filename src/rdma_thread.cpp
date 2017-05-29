@@ -5,9 +5,7 @@
 #include "rdma_thread.h"
 
 
-
 namespace SparkRdmaNetwork {
-
 
 
 } // namespace SparkRdmaNetwork

@@ -13,18 +13,18 @@ namespace SparkRdmaNetwork {
 // -------------------
 // - CompletionQueue -
 // -------------------
-RdmaInfiniband::CompletionQueue::CompletionQueue(RdmaInfiniband &infiniband, int min_cqe = kMinCqe) :
-    recv_cq_channel_(ibv_create_comp_channel(infiniband.device_.ctx_)) {
+RdmaInfiniband::CompletionQueue::CompletionQueue(RdmaInfiniband &infiniband, int min_cqe = kMinCqe) {
   RDMA_TRACE("construct CompletionQueue");
 
-  if (recv_cq_channel_ == nullptr) {
-    RDMA_ERROR("ibv_create_comp_channel error: {}", strerror(errno));
-    abort();
-  }
+  recv_cq_channel_ = ibv_create_comp_channel(infiniband.device_.ctx_);
+  GPR_ASSERT(recv_cq_channel_);
+
   send_cq_ = ibv_create_cq(infiniband.device_.ctx_, min_cqe, nullptr, nullptr, 0);
   GPR_ASSERT(send_cq_);
+
   recv_cq_ = ibv_create_cq(infiniband.device_.ctx_, min_cqe, nullptr, recv_cq_channel_, 0);
   GPR_ASSERT(recv_cq_);
+
   if (ibv_req_notify_cq(recv_cq_, 0) != 0) {
     RDMA_ERROR("ibv_req_notify_cq error: {}", strerror(errno));
     abort();

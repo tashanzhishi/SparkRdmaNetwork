@@ -24,12 +24,14 @@ typedef RdmaInfiniband::BufferDescriptor BufferDescriptor;
 class RdmaChannel {
 public:
   static const std::string get_ip_from_host(const std::string& host);
-  RdmaChannel *get_channel_from_ip(const std::string& ip);
+  static RdmaChannel *get_channel_from_ip(const std::string& ip) const;
 
   static std::map<std::string, std::string> Host2Ip;
   static boost::shared_mutex Host2IpLock;
   static std::map<std::string, RdmaChannel *> Ip2Channel;
   static boost::shared_mutex Ip2ChannelLock;
+  static std::map<int, RdmaChannel*> Fd2Channel;
+  static boost::shared_mutex Fd2ChannelLock;
 
   RdmaChannel(const char *host = nullptr, uint16_t port = kDefaultPort);
   ~RdmaChannel();
@@ -43,18 +45,22 @@ public:
                         uint8_t *header, const uint32_t header_len,
                         uint8_t* body, const uint32_t body_len);
 
-private:
+  CompletionQueue *get_completion_cq() const { return cq_;}
+
   int InitChannel(std::shared_ptr<RdmaSocket> socket);
+private:
 
   std::string ip_;
   uint16_t port_;
 
   CompletionQueue *cq_;
   QueuePair *qp_;
+  int is_ready;
 
   std::atomic_uint data_id_;
   std::map<uint32_t, std::pair<uint8_t*,uint8_t*> > id2data_;
   std::mutex id2data_lock_;
+  std::mutex channel_lock_;
 };
 
 } // namespace SparkRdmaNetwork

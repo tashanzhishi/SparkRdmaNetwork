@@ -29,21 +29,28 @@ const std::string RdmaChannel::get_ip_from_host(const std::string& host) {
   return Host2Ip[host];
 }
 
-RdmaChannel* RdmaChannel::get_channel_from_ip(const std::string &ip) {
-
-  ReadLock(Ip2ChannelLock);
-  if (Ip2Channel.find(ip) != Ip2Channel.end())
-    return Ip2Channel[ip];
-
+RdmaChannel* RdmaChannel::get_channel_from_ip(const std::string &ip) const {
+  {
+    ReadLock(Ip2ChannelLock);
+    if (Ip2Channel.find(ip) != Ip2Channel.end())
+      return Ip2Channel.at(ip);
+  }
   RDMA_ERROR("get_channel_from_ip failed");
   return nullptr;
 }
 
 RdmaChannel::RdmaChannel(const char *host, uint16_t port) :
-    ip_(""), port_(kDefaultPort), cq_(nullptr), qp_(nullptr), data_id_(0){
-  Init(host, port);
+    ip_(""), port_(kDefaultPort), cq_(nullptr), qp_(nullptr), data_id_(0), is_ready(0){
+  //Init(host, port);
 }
 
+RdmaChannel::~RdmaChannel() {
+  RDMA_TRACE("destruct RdmaChannel");
+  delete cq_;
+  delete qp_;
+}
+
+// when client call init, this mean client will create channel
 int RdmaChannel::Init(const char *c_host, uint16_t port) {
   RDMA_TRACE("init channel to {}", c_host);
 
@@ -150,9 +157,22 @@ int RdmaChannel::SendMsgWithHeader(const char *host, uint16_t port, uint8_t *hea
 int RdmaChannel::InitChannel(std::shared_ptr<RdmaSocket> socket) {
   RDMA_TRACE("start create cq qp etc.");
   RdmaInfiniband *infiniband = RdmaInfiniband::GetRdmaInfiniband();
-  cq_ = infiniband->CreateCompleteionQueue();
-  qp_ = infiniband->CreateQueuePair(cq_);
-  qp_->PreReceive(this);
+
+  {
+    std::lock_guard lock(channel_lock_);
+    if (cq_ == nullptr) {
+      cq_ = infiniband->CreateCompleteionQueue();
+      qp_ = infiniband->CreateQueuePair(cq_);
+      qp_->PreReceive(this);
+    }
+  }
+
+  int fd = cq_->get_recv_cq_channel()->fd;
+  if (Fd2Channel.find(fd) == Fd2Channel.end()) {
+    WriteLock(Fd2ChannelLock);
+    if (Fd2Channel.find(fd) == Fd2Channel.end())
+      Fd2Channel[fd] = this;
+  }
 
   RdmaConnectionInfo local_info, remote_info;
   local_info.small_qpn = qp_->get_local_qp_num(1);
@@ -162,13 +182,20 @@ int RdmaChannel::InitChannel(std::shared_ptr<RdmaSocket> socket) {
 
   socket->WriteInfo(local_info);
   socket->ReadInfo(remote_info);
-  if (qp_->ModifyQpToRTS() < 0) {
-    RDMA_ERROR("ModifyQpToRTS failed");
-    return -1;
-  }
-  if (qp_->ModifyQpToRTR(remote_info) < 0) {
-    RDMA_ERROR("ModifyQpToRTR failed");
-    return -1;
+
+  {
+    std::lock_guard lock(channel_lock_);
+    if (is_ready == 0) {
+      if (qp_->ModifyQpToRTS() < 0) {
+        RDMA_ERROR("ModifyQpToRTS failed");
+        return -1;
+      }
+      if (qp_->ModifyQpToRTR(remote_info) < 0) {
+        RDMA_ERROR("ModifyQpToRTR failed");
+        return -1;
+      }
+      is_ready = 1;
+    }
   }
 
   return 0;

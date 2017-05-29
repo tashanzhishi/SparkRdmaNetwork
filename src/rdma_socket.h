@@ -22,6 +22,7 @@ namespace SparkRdmaNetwork {
 
 const int kIpCharSize = 32;
 const uint16_t kDefaultPort = 6789;
+const std::string kIsServer("SERVER");
 
 
 class RdmaSocket {
@@ -29,18 +30,19 @@ public:
   static std::string GetIpFromHost(const char *host);
   static const std::string& get_local_ip() const;
 
-  RdmaSocket(const std::string ip = "", const uint16_t port = kDefaultPort);
+  RdmaSocket(const std::string ip = kIsServer, const uint16_t port = kDefaultPort);
   ~RdmaSocket();
 
   void Socket();
   // for server
   void Bind();
   void Listen();
-  RdmaSocket* Accept();
+  std::shared_ptr<RdmaSocket> Accept();
   // for client
   void Connect();
 
   std::string get_ip() const { return ip_; }
+  int get_socket_fd() const { return socket_fd_; }
   int WriteInfo(RdmaConnectionInfo& info);
   int ReadInfo(RdmaConnectionInfo& info);
 

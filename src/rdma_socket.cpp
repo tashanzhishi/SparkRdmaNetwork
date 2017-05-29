@@ -10,11 +10,11 @@
 
 namespace SparkRdmaNetwork {
 
-std::string RdmaSocket::local_ip_ = "";
+std::string RdmaSocket::local_ip_("localhost_");
 
 std::string RdmaSocket::GetIpFromHost(const char *host) {
   if (host == nullptr)
-    return "";
+    return kIsServer;
   struct hostent *he = gethostbyname(host);
   if (he == NULL) {
     RDMA_ERROR("gethostbyname: {} failed", host);
@@ -27,7 +27,7 @@ std::string RdmaSocket::GetIpFromHost(const char *host) {
 }
 
 const std::string& RdmaSocket::get_local_ip() const {
-  if (local_ip_ == "") {
+  if (local_ip_ == "localhost_") {
     char host_name[kIpCharSize] = {'\0'};
     if (gethostname(host_name, sizeof(host_name)) != 0) {
       RDMA_ERROR("gethostname error: {}", strerror(errno));
@@ -46,7 +46,7 @@ RdmaSocket::RdmaSocket(const std::string ip, const uint16_t port) {
   memset(&addr_, 0, sizeof(addr_));
   addr_.sin_family = AF_INET;
   addr_.sin_port = htons(port);
-  if (ip != nullptr) { // client
+  if (ip != kIsServer) { // client
     addr_.sin_addr.s_addr = inet_addr(ip_.c_str());
   } else { // server
     addr_.sin_addr.s_addr = htonl(INADDR_ANY);
@@ -68,7 +68,7 @@ void RdmaSocket::Socket() {
   RDMA_TRACE("socket success");
 
   // server
-  if (ip_ == "") {
+  if (ip_ == kIsServer) {
     int reuse = 1;
     if (setsockopt(socket_fd_, SOL_SOCKET, SO_REUSEADDR, (char *)&reuse, sizeof(int)) < 0) {
       RDMA_ERROR("setsockopt reuse error: {}", strerror(errno));
@@ -94,7 +94,7 @@ void RdmaSocket::Listen() {
   RDMA_TRACE("listen success");
 }
 
-RdmaSocket* RdmaSocket::Accept() {
+std::shared_ptr<RdmaSocket> RdmaSocket::Accept() {
   struct sockaddr_in addr, client_addr;
   socklen_t socklen = sizeof(addr);
   int fd = accept(socket_fd_, (struct sockaddr *)&addr, &socklen);
@@ -106,9 +106,9 @@ RdmaSocket* RdmaSocket::Accept() {
   char remote_ip[kIpCharSize] = {'\0'};
   memcpy(&client_addr, &addr, sizeof(addr));
   strcpy(remote_ip, inet_ntoa(client_addr.sin_addr));
-  RDMA_ERROR("accept %s, fd=%d", remote_ip, fd);
+  RDMA_DEBUG("accept %s, fd=%d", remote_ip, fd);
 
-  RdmaSocket *client = new RdmaSocket(remote_ip);
+  std::shared_ptr<RdmaSocket> client = new RdmaSocket(remote_ip);
   return client;
 }
 

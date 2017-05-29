@@ -131,9 +131,10 @@ public:
     ~CompletionQueue();
     ibv_cq* get_send_cq() { return send_cq_;}
     ibv_cq* get_recv_cq() { return recv_cq_;}
+    ibv_comp_channel* get_recv_cq_channel() { return recv_cq_channel_;}
 
   private:
-    ibv_comp_channel* const recv_cq_channel_;
+    ibv_comp_channel* recv_cq_channel_;
     ibv_cq *send_cq_;
     ibv_cq *recv_cq_;
     // no copy and =

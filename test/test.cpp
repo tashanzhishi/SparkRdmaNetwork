@@ -3,6 +3,7 @@
 #include <map>
 #include <set>
 #include <string>
+#include <vector>
 #include <cstdint>
 #include <cstdio>
 
@@ -173,7 +174,7 @@ void test_atomic() {
   }
   int x = static_cast<int>(add);
   cout << add << " " << x << endl;
-}*/
+}
 
 class tx {
 public:
@@ -187,9 +188,114 @@ void test_map() {
     cout << kv.first << " " << kv.second << endl;
 }
 
+void test_vector() {
+  int a[] = {1,2,3,4,5,6};
+  vector<int> b(a, a+ sizeof(a)/ sizeof(int));
+  for (auto &value : b)
+    cout << value << " ";
+  cout << endl;
+
+  int *c = &b[0];
+  int len = b.size();
+  for (int i = 0; i < len; ++i)
+    cout << c[i] << " ";
+  cout << endl;
+}*/
+
+/*void test_while() {
+  int ret = 1;
+  do {
+    if (ret < 10) {
+      cout << ret << endl;
+      ret++;
+      continue;
+    }
+    cout << ret << endl;
+  } while (0);
+}
+#include <queue>
+#include <functional>
+int usual_func(int a) {
+  cout << "usual " << a << endl;
+  return a=10;
+}
+class func_class {
+public:
+  func_class():a(20) {}
+  int class_func(int x) {
+    cout << "class " << x+a << endl;
+    return x+a;
+  }
+private:
+  int a;
+};
+void test_function() {
+  queue<function<int(int)>> func_qee;
+  func_qee.push(usual_func);
+
+  function<int(int)> xxx(usual_func);
 
 
-int main() {
+  func_class obj;
+  func_qee.push(std::bind(&func_class::class_func, obj, std::placeholders::_1));
+  while (!func_qee.empty()) {
+    cout << func_qee.front()(11) << endl;
+    func_qee.pop();
+  }
+}
+
+#include <thread>
+class test{
+public:
+  void print(){ cout << "hehe" << endl; }
+  static thread sth;
+};
+thread test::sth;
+void func(int a) {
+  cout << "func " << a << endl;
+}
+void test_static_thread() {
+  test t;
+  test::sth = thread(func, 3);
+  test::sth.join();
+
+  t.print();
+}
+*/
+#include <thread>
+#include <functional>
+#include <boost/thread/thread_pool.hpp>
+#include <boost/thread.hpp>
+typedef function<void(int)> vi_func;
+class test {
+public:
+  test() : pool_(10) {}
+  ~test() {pool_.close();}
+  void run() {
+    vi_func f = bind(&test::thread_func, this, std::placeholders::_1);
+    pool_.submit(bind(f, 3));
+  }
+  void thread_func(int a) {
+    cout << a << " thread2 " << this_thread::get_id() << endl;
+  }
+  boost::basic_thread_pool pool_;
+};
+void test_boost_thread_pool() {
+  test x;
+  x.run();
+  //boost::basic_thread_pool pool(10);
+  //function<void(int)> func = thread2;
+  //for (int i = 0; i < 1; ++i) {
+    //pool.submit(func);
+    //pool.submit(bind(thread2, 30));
+  //}
+  //auto x = bind(thread2, 3);
+  //x(1);
+  //pool.close();
+}
+
+
+int main(int argc, char *argv[]) {
   //test1();
   //test2();
   //test3();
@@ -199,5 +305,10 @@ int main() {
   //  cout << kv.first << " " << kv.second << endl;
   //test_atomic();
   //test_map();
+  //test_vector();
+  //test_while();
+  //test_function();
+  //test_static_thread();
+  test_boost_thread_pool();
   return 0;
 }
