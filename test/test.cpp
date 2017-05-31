@@ -202,17 +202,16 @@ void test_vector() {
   cout << endl;
 }*/
 
-/*void test_while() {
+void test_while() {
   int ret = 1;
   do {
-    if (ret < 10) {
-      cout << ret << endl;
-      ret++;
+    ret = 0;
+    if (ret == 0)
       continue;
-    }
     cout << ret << endl;
-  } while (0);
+  } while (ret );
 }
+/*
 #include <queue>
 #include <functional>
 int usual_func(int a) {
@@ -261,7 +260,7 @@ void test_static_thread() {
 
   t.print();
 }
-*/
+
 #include <thread>
 #include <functional>
 #include <boost/thread/thread_pool.hpp>
@@ -283,17 +282,8 @@ public:
 void test_boost_thread_pool() {
   test x;
   x.run();
-  //boost::basic_thread_pool pool(10);
-  //function<void(int)> func = thread2;
-  //for (int i = 0; i < 1; ++i) {
-    //pool.submit(func);
-    //pool.submit(bind(thread2, 30));
-  //}
-  //auto x = bind(thread2, 3);
-  //x(1);
-  //pool.close();
 }
-
+*/
 
 int main(int argc, char *argv[]) {
   //test1();
@@ -306,9 +296,9 @@ int main(int argc, char *argv[]) {
   //test_atomic();
   //test_map();
   //test_vector();
-  //test_while();
+  test_while();
   //test_function();
   //test_static_thread();
-  test_boost_thread_pool();
+  //test_boost_thread_pool();
   return 0;
 }

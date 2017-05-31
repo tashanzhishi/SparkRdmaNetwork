@@ -163,7 +163,7 @@ public:
     int PostReceiveWithNum(RdmaChannel *channel, bool is_small, int num);
     int PostReceive(RdmaChannel *channel, bool is_small);
     int PostSendAndWait(BufferDescriptor *buf, int num, bool is_small);
-    const char* WcStatusToString(int status);
+    static const char* WcStatusToString(int status);
   private:
     RdmaInfiniband& infiniband_;
     int qp_type_; // QP type (IBV_QPT_RC, etc.)

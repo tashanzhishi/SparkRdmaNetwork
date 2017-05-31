@@ -9,6 +9,8 @@
 #include <fcntl.h>
 #include <infiniband/verbs.h>
 
+#include <queue>
+
 #include "rdma_logger.h"
 #include "rdma_thread.h"
 
@@ -76,13 +78,42 @@ void RdmaEventLoop::HandleChannelEvent(void *rdma_channel) {
     abort();
   }
 
-  int event_num = 1;
+  int event_num;
   do {
     ibv_wc wc;
     event_num = ibv_poll_cq(ev_cq, 1, &wc);
     if (event_num < 0) {
       RDMA_ERROR("ibv_poll_cq poll failed");
       abort();
+    } else if (event_num == 0) {
+      continue;
+    } else {
+      std::queue<BufferDescriptor*> small_data, big_data, req_rpc, ack_rpc;
+      for (int i = 0; i < event_num; ++i) {
+        if (wc.status != IBV_WC_SUCCESS) {
+          RDMA_ERROR("ibv_poll_cq error, {}", QueuePair::WcStatusToString(wc.status));
+          abort();
+        }
+        if (wc.opcode != IBV_WC_RECV) {
+          RDMA_ERROR("all poll event must be recv");
+          abort();
+        }
+        BufferDescriptor *bd = (BufferDescriptor *)wc.wr_id;
+        bd->bytes_ = wc.byte_len;
+        RdmaDataHeader *header = (RdmaDataHeader *)bd->buffer_;
+        if (header->data_type == TYPE_SMALL_DATA) {
+          small_data.push(bd);
+        } else if (header->data_type == TYPE_BIG_DATA) {
+          big_data.push(bd);
+        } else if (header->data_type == TYPE_RPC_REQ) {
+          req_rpc.push(bd);
+        } else if (header->data_type == TYPE_RPC_ACK) {
+          ack_rpc.push(bd);
+        } else {
+          RDMA_ERROR("unknow recv data header, maybe send error or recv error");
+          abort();
+        }
+      }
     }
   } while (event_num);
 }
