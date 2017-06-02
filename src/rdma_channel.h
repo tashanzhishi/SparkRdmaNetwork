@@ -11,6 +11,7 @@
 #include <map>
 #include <atomic>
 #include <boost/thread/shared_mutex.hpp>
+#include <boost/lockfree/queue.hpp>
 
 #include "rdma_socket.h"
 #include "rdma_infiniband.h"
@@ -48,8 +49,12 @@ public:
   CompletionQueue *get_completion_cq() const { return cq_;}
 
   int InitChannel(std::shared_ptr<RdmaSocket> socket);
-private:
 
+
+  boost::lockfree::queue<BufferDescriptor*> small_data_, big_data_, req_rpc_, ack_rpc_;
+  std::atomic_bool small_data_running_, big_data_running_, req_rpc_running_, ack_rpc_running_;
+
+private:
   std::string ip_;
   uint16_t port_;
 

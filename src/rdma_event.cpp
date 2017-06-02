@@ -48,13 +48,15 @@ int RdmaEventLoop::Poll(int timeout) {
 
   for (int i = 1; i < fd_count; ++i) {
     if (pfds[i].revents & POLLIN) {
-      ibv_comp_channel *recv_cq_channel= nullptr;
+      //ibv_comp_channel *recv_cq_channel= nullptr;
+      RdmaChannel *channel = nullptr;
       {
         ReadLock(RdmaChannel::Fd2ChannelLock);
-        recv_cq_channel = RdmaChannel::Fd2Channel.at(pfds[i].fd)->get_completion_cq()->get_recv_cq_channel();
+        //recv_cq_channel = RdmaChannel::Fd2Channel.at(pfds[i].fd)->get_completion_cq()->get_recv_cq_channel();
+        channel = RdmaChannel::Fd2Channel.at(pfds[i].fd);
       }
       HandleFunction handle = std::bind(&RdmaEventLoop::HandleChannelEvent, this, std::placeholders::_1);
-      thread_pool_.submit(std::bind(handle, recv_cq_channel));
+      thread_pool_.submit(std::bind(handle, channel));
     }
   }
 
@@ -62,7 +64,8 @@ int RdmaEventLoop::Poll(int timeout) {
 }
 
 void RdmaEventLoop::HandleChannelEvent(void *rdma_channel) {
-  ibv_comp_channel *recv_cq_channel = (ibv_comp_channel *)rdma_channel;
+  RdmaChannel *channel = (RdmaChannel *)rdma_channel;
+  ibv_comp_channel *recv_cq_channel = channel->get_completion_cq()->get_recv_cq_channel();
   ibv_cq *ev_cq;
   void *ev_ctx;
 
@@ -88,7 +91,6 @@ void RdmaEventLoop::HandleChannelEvent(void *rdma_channel) {
     } else if (event_num == 0) {
       continue;
     } else {
-      std::queue<BufferDescriptor*> small_data, big_data, req_rpc, ack_rpc;
       for (int i = 0; i < event_num; ++i) {
         if (wc.status != IBV_WC_SUCCESS) {
           RDMA_ERROR("ibv_poll_cq error, {}", QueuePair::WcStatusToString(wc.status));
@@ -102,13 +104,13 @@ void RdmaEventLoop::HandleChannelEvent(void *rdma_channel) {
         bd->bytes_ = wc.byte_len;
         RdmaDataHeader *header = (RdmaDataHeader *)bd->buffer_;
         if (header->data_type == TYPE_SMALL_DATA) {
-          small_data.push(bd);
+          channel->small_data_.push(bd);
         } else if (header->data_type == TYPE_BIG_DATA) {
-          big_data.push(bd);
+          channel->big_data_.push(bd);
         } else if (header->data_type == TYPE_RPC_REQ) {
-          req_rpc.push(bd);
+          channel->req_rpc_.push(bd);
         } else if (header->data_type == TYPE_RPC_ACK) {
-          ack_rpc.push(bd);
+          channel->ack_rpc_.push(bd);
         } else {
           RDMA_ERROR("unknow recv data header, maybe send error or recv error");
           abort();

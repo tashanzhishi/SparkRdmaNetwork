@@ -285,7 +285,6 @@ void test_boost_thread_pool() {
   test x;
   x.run();
 }
-*/
 
 #include <thread>
 #include <memory>
@@ -300,6 +299,46 @@ void test_local_queue() {
   local_queue->push(temp);
   cout << local_queue->front() << endl;
   x = thread(handle_thread, local_queue);
+  sleep(1);
+  x.join();
+}
+*/
+
+#include <boost/lockfree/queue.hpp>
+#include <boost/thread/thread_pool.hpp>
+#include <atomic>
+#include <functional>
+boost::lockfree::queue<int> lf_queue(128);
+atomic_int cnt(0);
+void producter(int num) {
+  for (int i = 0; i < 10; ++i) {
+    int x = atomic_fetch_add(&cnt, 1);
+    lf_queue.push(x+1);
+    cout << "push " << x+1 << endl;
+  }
+  cout << "push end" << endl;
+}
+void consumer(int num) {
+  for (int i = 0; i < num; ++i) {
+    if (lf_queue.empty())
+      break;
+    int ret;
+    lf_queue.pop(ret);
+    cout << "         pop " << ret << endl;
+  }
+  cout << "pop end" << endl;
+}
+void test_boost_lock_free() {
+  boost::basic_thread_pool pool(10);
+  for (int i = 0; i < 6; ++i) {
+    pool.submit(bind(producter, 10));
+  }
+  for (int i = 0; i < 4; ++i) {
+    pool.submit(bind(consumer, 10));
+  }
+  sleep(1);
+  pool.close();
+  cout << "all end" << endl;
 }
 
 int main(int argc, char *argv[]) {
@@ -317,7 +356,7 @@ int main(int argc, char *argv[]) {
   //test_function();
   //test_static_thread();
   //test_boost_thread_pool();
-  test_local_queue();
-  x.join();
+  //test_local_queue();
+  test_boost_lock_free();
   return 0;
 }

@@ -2,7 +2,7 @@
 #include <thread>
 #include <pthread.h>
 
-#include "rdma_log.h"
+#include "rdma_logger.h"
 
 using namespace SparkRdmaNetwork;
 
@@ -43,7 +43,7 @@ void test2() {
 }
 
 int main() {
-  //test1();
-  test2();
+  test1();
+  //test2();
   return 0;
 }
