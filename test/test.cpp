@@ -3,9 +3,12 @@
 #include <map>
 #include <set>
 #include <string>
+#include <queue>
 #include <vector>
 #include <cstdint>
+#include <cstring>
 #include <cstdio>
+#include <unistd.h>
 
 using namespace std;
 /*
@@ -200,7 +203,7 @@ void test_vector() {
   for (int i = 0; i < len; ++i)
     cout << c[i] << " ";
   cout << endl;
-}*/
+}
 
 void test_while() {
   int ret = 1;
@@ -211,7 +214,6 @@ void test_while() {
     cout << ret << endl;
   } while (ret );
 }
-/*
 #include <queue>
 #include <functional>
 int usual_func(int a) {
@@ -285,6 +287,21 @@ void test_boost_thread_pool() {
 }
 */
 
+#include <thread>
+#include <memory>
+thread x;
+void handle_thread(shared_ptr<queue<char*>> qee) {
+  cout << qee->front() << endl;
+}
+void test_local_queue() {
+  shared_ptr<queue<char*>> local_queue(new queue<char*>);
+  char *temp = new char[10];
+  strcpy(temp, "hehhe");
+  local_queue->push(temp);
+  cout << local_queue->front() << endl;
+  x = thread(handle_thread, local_queue);
+}
+
 int main(int argc, char *argv[]) {
   //test1();
   //test2();
@@ -296,9 +313,11 @@ int main(int argc, char *argv[]) {
   //test_atomic();
   //test_map();
   //test_vector();
-  test_while();
+  //test_while();
   //test_function();
   //test_static_thread();
   //test_boost_thread_pool();
+  test_local_queue();
+  x.join();
   return 0;
 }

@@ -5,7 +5,7 @@
 #ifndef SPARKRDMA_RDMA_LOG_H
 #define SPARKRDMA_RDMA_LOG_H
 
-#include <spdlog/spdlog.h>
+#include "spdlog/spdlog.h"
 #include <memory>
 #include <mutex>
 #include <cstring>
