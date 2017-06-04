@@ -40,7 +40,8 @@ RdmaChannel* RdmaChannel::get_channel_from_ip(const std::string &ip) const {
 }
 
 RdmaChannel::RdmaChannel(const char *host, uint16_t port) :
-    ip_(""), port_(kDefaultPort), cq_(nullptr), qp_(nullptr), data_id_(0), is_ready(0){
+    ip_(""), port_(kDefaultPort), cq_(nullptr), qp_(nullptr), data_id_(0), is_ready(0),
+    recv_data_running_(false), req_rpc_running_(false), ack_rpc_running_(false) {
   //Init(host, port);
 }
 
@@ -85,26 +86,33 @@ int RdmaChannel::SendMsg(const char *host, uint16_t port, uint8_t *msg, uint32_t
   header->data_id = data_id;
   header->data_len = len;
 
-  BufferDescriptor buf;
-  buf.buffer_ = msg;
-  buf.bytes_ = 0;
-  buf.channel_ = this;
-  buf.mr_ = GET_MR(msg);
+
+  BufferDescriptor *send_buff = new BufferDescriptor();
+  send_buff->buffer_ = msg;
+  send_buff->bytes_ = len;
+  send_buff->channel_ = this;
+  send_buff->mr_ = GET_MR(msg);
 
   if (IS_SMALL(len)) {
     header->data_type = TYPE_SMALL_DATA;
-    buf.bytes_ = len;
 
-    qp_->PostSendAndWait(&buf, 1, true);
+    qp_->PostSendAndWait(send_buff, 1, true);
+    delete send_buff;
   } else {
     header->data_type = TYPE_RPC_REQ;
-    buf.bytes_ = sizeof(RdmaDataHeader);
+    RdmaDataHeader *req_data = (RdmaDataHeader *)RMALLOC(sizeof(RdmaDataHeader));
+    memcpy(req_data, header, sizeof(RdmaDataHeader));
+    BufferDescriptor rpc_buff;
+    rpc_buff.buffer_ = (uint8_t *)req_data;
+    rpc_buff.bytes_ = sizeof(RdmaDataHeader);
+    rpc_buff.channel_ = this;
+    rpc_buff.mr_ = GET_MR(req_data);
     {
       std::lock_guard lock(id2data_lock_);
-      id2data_[data_id] = std::pair<uint8_t*, uint8_t*>(msg, nullptr);
+      id2data_[data_id] = std::pair<BufferDescriptor*, int>(send_buff, 1);
     }
 
-    qp_->PostSendAndWait(&buf, 1, false);
+    qp_->PostSendAndWait(&rpc_buff, 1, false);
   }
 
   return 0;
@@ -124,31 +132,36 @@ int RdmaChannel::SendMsgWithHeader(const char *host, uint16_t port, uint8_t *hea
   rdma_header->data_id = data_id;
   rdma_header->data_len = data_len;
 
-  BufferDescriptor buf[2];
-  buf[0].buffer_ = header;
-  buf[0].bytes_ = 0;
-  buf[0].channel_ = this;
-  buf[0].mr_ = GET_MR(header);
-  buf[1].buffer_ = body;
-  buf[1].bytes_ = 0;
-  buf[1].channel_ = this;
-  buf[1].mr_ = GET_MR(body);
+  BufferDescriptor *send_buff = new BufferDescriptor[2];
+  send_buff[0].buffer_ = header;
+  send_buff[0].bytes_ = header_len;
+  send_buff[0].channel_ = this;
+  send_buff[0].mr_ = GET_MR(header);
+  send_buff[1].buffer_ = body;
+  send_buff[1].bytes_ = body_len;
+  send_buff[1].channel_ = this;
+  send_buff[1].mr_ = GET_MR(body);
 
   if (IS_SMALL(data_len)) {
     rdma_header->data_type = TYPE_SMALL_DATA;
-    buf[0].bytes_ = header_len;
-    buf[1].bytes_ = body_len;
 
-    qp_->PostSendAndWait(buf, 2, true);
+    qp_->PostSendAndWait(send_buff, 2, true);
+    delete[] send_buff;
   } else {
     rdma_header->data_type = TYPE_RPC_REQ;
-    buf[0].bytes_ = sizeof(RdmaDataHeader);
+    RdmaDataHeader *req_data = (RdmaDataHeader *)RMALLOC(sizeof(RdmaDataHeader));
+    memcpy(req_data, rdma_header, sizeof(RdmaDataHeader));
+    BufferDescriptor buf;
+    buf.buffer_ = (uint8_t *)req_data;
+    buf.bytes_ = sizeof(RdmaDataHeader);
+    buf.channel_ = this;
+    buf.mr_ = GET_MR(req_data);
     {
       std::lock_guard lock(id2data_lock_);
-      id2data_[data_id] = std::pair<uint8_t*, uint8_t*>(header, body);
+      id2data_[data_id] = std::pair<BufferDescriptor*, int>(send_buff, 2);
     }
 
-    qp_->PostSendAndWait(buf, 1, false);
+    qp_->PostSendAndWait(&buf, 1, false);
   }
 
   return 0;

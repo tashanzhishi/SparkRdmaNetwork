@@ -55,7 +55,7 @@ inline std::size_t len2num(std::size_t len, std::size_t size) {
 class RdmaMemoryPool {
 public:
   static RdmaMemoryPool* GetMemoryPool(ibv_pd *pd);
-  static RdmaMemoryPool* GetMemoryPool();
+  static inline RdmaMemoryPool* GetMemoryPool();
 
   void *malloc(std::size_t len);
   void free(void *ptr, std::size_t len);
@@ -78,36 +78,27 @@ private:
     static char *malloc(const size_type bytes) {
       RDMA_TRACE("register memory {} bytes", bytes);
       char *addr = static_cast<char *>((std::malloc)(bytes));
-
       //ibv_mr *mr = (void*)(total_size++);
       ibv_mr *mr = ibv_reg_mr(memory_pool_->pd_, addr, bytes, kRdmaMemoryFlag);
       if (mr == nullptr) {
         RDMA_ERROR("ibv_reg_mr error");
         abort();
       }
-
-      std::cout << "malloc: " << (void*)addr << std::endl;
-
       // should thread safe
       {
         std::lock_guard<std::mutex> lock(memory_pool_->lock_);
         memory_pool_->addr_set_.insert((void *) addr);
         memory_pool_->addr2mr_[(void *) addr] = std::pair<std::size_t, ibv_mr *>(bytes, mr);
       }
-
       return addr;
     }
 
     static void free(char *const block) {
       RDMA_TRACE("deregister memory");
-
-      /*if (ibv_dereg_mr(memory_pool_->get_mr_from_addr(block)) != 0) {
+      if (ibv_dereg_mr(memory_pool_->get_mr_from_addr(block)) != 0) {
         RDMA_ERROR("ibv_dereg_mr error: {}", strerror(errno));
         abort();
-      }*/
-
-      std::cout << "free: " << (void*)block << std::endl;
-
+      }
       {
         std::lock_guard<std::mutex> lock(memory_pool_->lock_);
         if (memory_pool_->addr_set_.find(block) == memory_pool_->addr_set_.end()) {
@@ -117,7 +108,6 @@ private:
         memory_pool_->addr_set_.erase(block);
         memory_pool_->addr2mr_.erase(block);
       }
-
       (std::free)(block);
     }
   };

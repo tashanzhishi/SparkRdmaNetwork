@@ -302,7 +302,7 @@ void test_local_queue() {
   sleep(1);
   x.join();
 }
-*/
+
 
 #include <boost/lockfree/queue.hpp>
 #include <boost/thread/thread_pool.hpp>
@@ -339,6 +339,21 @@ void test_boost_lock_free() {
   sleep(1);
   pool.close();
   cout << "all end" << endl;
+}*/
+
+struct arr {
+  int a;
+  void print() {cout << a << endl;}
+  arr(int x) : a(x) {}
+  arr() : a(-1) {}
+};
+void test_class_array() {
+  arr *x = new arr[3];
+  x[0].print();
+  for(int i=0; i<3; i++) {
+    new (x+i)arr(i); // ???
+    x[i].print();
+  }
 }
 
 int main(int argc, char *argv[]) {
@@ -357,6 +372,7 @@ int main(int argc, char *argv[]) {
   //test_static_thread();
   //test_boost_thread_pool();
   //test_local_queue();
-  test_boost_lock_free();
+  //test_boost_lock_free();
+  test_class_array();
   return 0;
 }

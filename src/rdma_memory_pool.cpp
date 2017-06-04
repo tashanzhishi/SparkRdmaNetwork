@@ -22,7 +22,7 @@ RdmaMemoryPool* RdmaMemoryPool::GetMemoryPool(ibv_pd *pd) {
   return memory_pool_;
 }
 
-RdmaMemoryPool* RdmaMemoryPool::GetMemoryPool() {
+inline RdmaMemoryPool* RdmaMemoryPool::GetMemoryPool() {
   if (memory_pool_ == nullptr) {
     RDMA_ERROR("please use GetMemoryPool(*pd) first");
     abort();

@@ -27,7 +27,9 @@ public:
   };
 
   void HandleChannelEvent(void *rdma_channel);
-
+  void HandleRecvDataEvent(void *rdma_channel);
+  void HandleReqRpcEvent(void *rdma_channel);
+  void HandleAckRpcEvent(void *rdma_channel);
 
 private:
   int wakeup_fd_;

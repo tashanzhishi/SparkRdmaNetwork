@@ -274,6 +274,44 @@ int RdmaInfiniband::QueuePair::PostSendAndWait(BufferDescriptor *buf, int num, b
   return 0;
 }
 
+int RdmaInfiniband::QueuePair::PostWriteAndWait(BufferDescriptor *buf, int num, uint64_t addr, uint32_t rkey) {
+  ibv_sge sge[num];
+  for (int i = 0; i < num; ++i) {
+    sge[i].addr = (uint64_t)buf[i].buffer_;
+    sge[i].length = buf[i].bytes_;
+    sge[i].lkey = buf[i].mr_->lkey;
+  }
+  ibv_send_wr send_wr = {
+      .wr_id = 0,
+      .sg_list = sge,
+      .num_sge = num,
+      .opcode = IBV_WR_RDMA_WRITE,
+      .send_flags = IBV_SEND_SIGNALED,
+      .wr.rdma.remote_addr = addr,
+      .wr.rdma.rkey = rkey,
+  };
+  ibv_send_wr *bad;
+  {
+    std::lock_guard lock(send_lock);
+    if (ibv_post_send(big_qp_, &send_wr, &bad) < 0) {
+      RDMA_ERROR("ibv_post_send error, {}", strerror(errno));
+      return -1;
+    }
+    ibv_wc wc;
+    while (ibv_poll_cq(send_cq_, 1, &wc) < 1)
+      ;
+    if (wc.status != IBV_WC_SUCCESS) {
+      RDMA_ERROR("ibv_poll_cq error: {}", WcStatusToString(wc.status));
+      return -1;
+    }
+  }
+
+  for (int i = 0; i < num; ++i) {
+    RFREE(buf[i].buffer_, buf[i].bytes_);
+  }
+  return 0;
+}
+
 const char* RdmaInfiniband::QueuePair::WcStatusToString(int status) {
   static const char *wc_string[] = {
       "IBV_WC_SUCCESS",

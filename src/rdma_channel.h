@@ -15,6 +15,7 @@
 
 #include "rdma_socket.h"
 #include "rdma_infiniband.h"
+#include "rdma_thread.h"
 
 namespace SparkRdmaNetwork {
 
@@ -47,12 +48,23 @@ public:
                         uint8_t* body, const uint32_t body_len);
 
   CompletionQueue *get_completion_cq() const { return cq_;}
+  QueuePair *get_queue_pair() const { return qp_; }
+  std::pair<BufferDescriptor*, int> get_data_from_id(uint32_t id) {
+    std::lock_guard lock(id2data_lock_);
+    if (id2data_.find(id) == id2data_.end()) {
+      RDMA_ERROR("id2data canot find data_id {}", id);
+      return std::pair<BufferDescriptor*, int>(nullptr, 0);
+    }
+    std::pair<BufferDescriptor*, int> data = id2data_[id];
+    id2data_.erase(id);
+    return data;
+  };
 
   int InitChannel(std::shared_ptr<RdmaSocket> socket);
 
 
-  boost::lockfree::queue<BufferDescriptor*> small_data_, big_data_, req_rpc_, ack_rpc_;
-  std::atomic_bool small_data_running_, big_data_running_, req_rpc_running_, ack_rpc_running_;
+  boost::lockfree::queue<BufferDescriptor*> recv_data_, req_rpc_, ack_rpc_; // maybe only need rpc_data_?
+  std::atomic_bool recv_data_running_, req_rpc_running_, ack_rpc_running_;
 
 private:
   std::string ip_;
@@ -63,7 +75,7 @@ private:
   int is_ready;
 
   std::atomic_uint data_id_;
-  std::map<uint32_t, std::pair<uint8_t*,uint8_t*> > id2data_;
+  std::map<uint32_t, std::pair<BufferDescriptor*, int> > id2data_;
   std::mutex id2data_lock_;
   std::mutex channel_lock_;
 };

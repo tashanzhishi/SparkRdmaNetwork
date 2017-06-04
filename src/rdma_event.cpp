@@ -13,6 +13,7 @@
 
 #include "rdma_logger.h"
 #include "rdma_thread.h"
+#include "rdma_memory_pool.h"
 
 namespace SparkRdmaNetwork {
 
@@ -104,9 +105,9 @@ void RdmaEventLoop::HandleChannelEvent(void *rdma_channel) {
         bd->bytes_ = wc.byte_len;
         RdmaDataHeader *header = (RdmaDataHeader *)bd->buffer_;
         if (header->data_type == TYPE_SMALL_DATA) {
-          channel->small_data_.push(bd);
+          channel->recv_data_.push(bd);
         } else if (header->data_type == TYPE_BIG_DATA) {
-          channel->big_data_.push(bd);
+          channel->recv_data_.push(bd);
         } else if (header->data_type == TYPE_RPC_REQ) {
           channel->req_rpc_.push(bd);
         } else if (header->data_type == TYPE_RPC_ACK) {
@@ -118,6 +119,85 @@ void RdmaEventLoop::HandleChannelEvent(void *rdma_channel) {
       }
     }
   } while (event_num);
+}
+
+// recv small data, or big data successed writed
+void RdmaEventLoop::HandleRecvDataEvent(void *rdma_channel) {
+  RdmaChannel *channel = (RdmaChannel *)rdma_channel;
+  while (!channel->recv_data_.empty()) {
+    BufferDescriptor bd;
+    channel->recv_data_.pop(bd);
+    //
+  }
+  channel->recv_data_running_ = false;
+}
+
+// recv a rpc contain a size which writed by peer, and should malloc registed memory
+// and send the addr to peer
+void RdmaEventLoop::HandleReqRpcEvent(void *rdma_channel) {
+  RdmaChannel *channel = (RdmaChannel *)rdma_channel;
+  QueuePair *qp = channel->get_queue_pair();
+  while (!channel->req_rpc_.empty()) {
+    BufferDescriptor bd;
+    channel->req_rpc_.pop(bd);
+    GPR_ASSERT(sizeof(RdmaDataHeader) == bd.bytes_);
+    RdmaDataHeader *header = (RdmaDataHeader *)bd.buffer_;
+    uint32_t len = header->data_len;
+    uint32_t data_id = header->data_id;
+
+    uint8_t *buffer = (uint8_t*)RMALLOC(len);
+    uint32_t rkey = GET_MR(buffer)->rkey;
+
+    // send addr to peer
+    RdmaRpc *ack_data = (RdmaRpc *)RMALLOC(sizeof(RdmaRpc));
+    ack_data->data_type = TYPE_RPC_ACK;
+    ack_data->addr = (uint64_t)buffer;
+    ack_data->rkey = rkey;
+    ack_data->data_id = data_id;
+
+    bd.buffer_ = (uint8_t*)ack_data;
+    bd.bytes_ = sizeof(RdmaRpc);
+    bd.mr_ = GET_MR(ack_data);
+    bd.channel_ = channel;
+    qp->PostSendAndWait(&bd, 1, false);
+  }
+  channel->recv_data_running_ = false;
+}
+
+// recv addr of peer, so write big data to peer and send write success message
+void RdmaEventLoop::HandleAckRpcEvent(void *rdma_channel) {
+  RdmaChannel *channel = (RdmaChannel *)rdma_channel;
+  QueuePair *qp = channel->get_queue_pair();
+  while (!channel->ack_rpc_.empty()) {
+    BufferDescriptor bd;
+    channel->ack_rpc_.pop(bd);
+    GPR_ASSERT(sizeof(RdmaRpc) == bd.bytes_);
+    RdmaRpc *header = (RdmaRpc *)bd.buffer_;
+    uint64_t addr = header->addr;
+    uint32_t rkey = header->rkey;
+    uint32_t data_id = header->data_id;
+
+    std::pair<BufferDescriptor*, int> write_data = channel->get_data_from_id(data_id);
+    if (write_data.first == nullptr && write_data.second == 0) {
+      RDMA_ERROR("get big data from data_id failed. data_id: {}", data_id);
+      abort();
+    } else {
+      BufferDescriptor *buff = write_data.first;
+      int num = write_data.second;
+      RdmaDataHeader *data_header = (RdmaDataHeader *)buff[0].buffer_;
+      data_header->data_type = TYPE_BIG_DATA;
+      qp->PostWriteAndWait(buff, num, addr, rkey);
+      if (num == 1) {
+        delete buff;
+      } else if (num == 2) {
+        delete[] buff;
+      } else {
+        RDMA_ERROR("buffer num must be 1 or 2, but it is {}", num);
+        abort();
+      }
+    }
+  }
+  channel->ack_rpc_running_ = false;
 }
 
 } // namespace SparkRdmaNetwork

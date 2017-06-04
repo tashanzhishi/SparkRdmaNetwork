@@ -32,24 +32,22 @@ enum RdmaDataType: uint8_t {
 };
 struct RdmaDataHeader {
   RdmaDataType data_type;
-  union {
-    // data req
-    struct {
-      uint32_t data_len;
-      uint32_t data_id;
-    };
-    // ack
-    struct {
-      uint64_t addr;
-      uint32_t rkey;
-    };
-  };
+  uint32_t data_len;
+  uint32_t data_id;
+}__attribute__((__packed__));
+
+struct RdmaRpc {
+  RdmaDataType data_type;
+  uint32_t data_id;
+  uint32_t data_len;
+  uint32_t rkey;
+  uint64_t addr;
 }__attribute__((__packed__));
 
 const int kRdmaMemoryFlag = IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_WRITE;
 
 inline bool IS_SMALL(uint32_t len) {
-  return len+ sizeof(RdmaDataHeader) <= 1024;
+  return len + sizeof(RdmaDataHeader) <= 1024;
 }
 
 } // namespace SparkRdmaNetwork
