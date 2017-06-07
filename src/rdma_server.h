@@ -17,6 +17,8 @@ namespace SparkRdmaNetwork {
 
 class RdmaServer {
 public:
+  RdmaServer() : server_(nullptr) {}
+
   int InitServer(const char *host = nullptr, uint16_t port = kDefaultPort);
   void DestroyServer();
 
@@ -27,6 +29,9 @@ private:
   int InitServerSocket(const char *host, uint16_t port);
 
   RdmaSocket *server_;
+
+  RdmaServer(RdmaServer &) = delete;
+  RdmaServer&operator=(RdmaServer &) = delete;
 };
 
 } // namespace SparkRdmaNetwork

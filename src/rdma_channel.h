@@ -16,6 +16,7 @@
 #include "rdma_socket.h"
 #include "rdma_infiniband.h"
 #include "rdma_thread.h"
+#include "rdma_memory_pool.h"
 
 namespace SparkRdmaNetwork {
 
@@ -26,7 +27,7 @@ typedef RdmaInfiniband::BufferDescriptor BufferDescriptor;
 class RdmaChannel {
 public:
   static const std::string get_ip_from_host(const std::string& host);
-  static RdmaChannel *get_channel_from_ip(const std::string& ip) const;
+  static RdmaChannel *get_channel_from_ip(const std::string& ip);
 
   static std::map<std::string, std::string> Host2Ip;
   static boost::shared_mutex Host2IpLock;
@@ -40,7 +41,6 @@ public:
 
   // connect to server
   int Init(const char *host, uint16_t port);
-  // the msg, header, body have been registered
   // the host and port is not used
   int SendMsg(const char *host, uint16_t port, uint8_t *msg, uint32_t len);
   int SendMsgWithHeader(const char *host, uint16_t port,

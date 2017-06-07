@@ -268,9 +268,6 @@ int RdmaInfiniband::QueuePair::PostSendAndWait(BufferDescriptor *buf, int num, b
       return -1;
     }
   }
-  for (int i = 0; i < num; ++i) {
-    RFREE(buf[i].buffer_, buf[i].bytes_);
-  }
   return 0;
 }
 
@@ -304,10 +301,6 @@ int RdmaInfiniband::QueuePair::PostWriteAndWait(BufferDescriptor *buf, int num, 
       RDMA_ERROR("ibv_poll_cq error: {}", WcStatusToString(wc.status));
       return -1;
     }
-  }
-
-  for (int i = 0; i < num; ++i) {
-    RFREE(buf[i].buffer_, buf[i].bytes_);
   }
   return 0;
 }

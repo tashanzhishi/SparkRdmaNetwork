@@ -351,7 +351,7 @@ void test_class_array() {
   arr *x = new arr[3];
   x[0].print();
   for(int i=0; i<3; i++) {
-    new (x+i)arr(i); // ???
+    new(x+i) arr(i); // ???
     x[i].print();
   }
 }

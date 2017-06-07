@@ -5,6 +5,8 @@
 #ifndef SPARKRDMA_RDMA_EVENT_LOOP_H
 #define SPARKRDMA_RDMA_EVENT_LOOP_H
 
+#include <sys/eventfd.h>
+
 #include <vector>
 #include <functional>
 
@@ -15,15 +17,16 @@ namespace SparkRdmaNetwork {
 
 typedef std::function<void(void *)> HandleFunction;
 
-class RdmaEventLoop {
+class RdmaEvent {
 public:
-  RdmaEventLoop();
-  ~RdmaEventLoop();
+  RdmaEvent();
+  ~RdmaEvent();
 
   int Poll(int timeout);
 
   void Pollset_add(int fd) {
     pollset_.push_back(fd);
+    EventfdWakeup();
   };
 
   void HandleChannelEvent(void *rdma_channel);
@@ -32,13 +35,15 @@ public:
   void HandleAckRpcEvent(void *rdma_channel);
 
 private:
+  int EventfdWakeup();
+  int EventfdConsume();
   int wakeup_fd_;
   std::vector<int> pollset_;
   boost::basic_thread_pool thread_pool_;
 
   // no copy and =
-  RdmaEventLoop(RdmaEventLoop &) = delete;
-  RdmaEventLoop &operator=(RdmaEventLoop &) = delete;
+  RdmaEvent(RdmaEvent &) = delete;
+  RdmaEvent &operator=(RdmaEvent &) = delete;
 };
 
 } // namespace SparkRdmaNetwork

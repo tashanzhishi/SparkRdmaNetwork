@@ -7,7 +7,7 @@ set(CMAKE_CXX_STANDARD 11)
 set(SOURCE_FILES rdma_logger.h rdma_logger.cpp rdma_memory_pool.h rdma_memory_pool.cpp
         rdma_infiniband.cpp rdma_infiniband.h rdma_socket.cpp rdma_socket.h
         rdma_channel.cpp rdma_channel.h rdma_thread.cpp rdma_thread.h rdma_protocol.cpp
-        rdma_protocol.h rdma_event.cpp rdma_event.h rdma_server.cpp rdma_server.h)
+        rdma_protocol.h rdma_event.cpp rdma_event.h rdma_server.cpp rdma_server.h jni_common.cpp jni_common.h io_rdma_RdmaServer.cpp io_rdma_RdmaServer.h io_rdma_RdmaChannel.cpp io_rdma_RdmaChannel.h)
 
 add_library(SparkRdma SHARED ${SOURCE_FILES})
 

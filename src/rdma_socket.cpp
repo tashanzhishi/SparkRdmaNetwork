@@ -4,7 +4,6 @@
 
 #include "rdma_socket.h"
 
-
 #include "rdma_logger.h"
 
 
