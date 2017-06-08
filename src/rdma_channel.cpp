@@ -80,11 +80,12 @@ int RdmaChannel::SendMsg(const char *host, uint16_t port, uint8_t *msg, uint32_t
   RDMA_TRACE("send msg {}:{}", host, len);
   uint32_t data_id = atomic_fetch_add(&data_id_, 1);
   data_id += 1;
+  uint32_t data_len = len + sizeof(RdmaDataHeader);
 
   RdmaDataHeader *header = (RdmaDataHeader *)RMALLOC(sizeof(RdmaDataHeader));
   memset(header, 0, sizeof(RdmaDataHeader));
   header->data_id = data_id;
-  header->data_len = len;
+  header->data_len = data_len;
 
   BufferDescriptor *send_buff = new BufferDescriptor[2];
   send_buff[0].buffer_ = (uint8_t*)header;
@@ -96,7 +97,7 @@ int RdmaChannel::SendMsg(const char *host, uint16_t port, uint8_t *msg, uint32_t
   send_buff[1].channel_ = this;
   send_buff[1].mr_ = GET_MR(msg);
 
-  if (IS_SMALL(len + sizeof(RdmaDataHeader))) {
+  if (IS_SMALL(data_len)) {
     header->data_type = TYPE_SMALL_DATA;
     if (qp_->PostSendAndWait(send_buff, 2, true) < 0) {
       RDMA_ERROR("PostSendAndWait small_data failed");
@@ -123,7 +124,7 @@ int RdmaChannel::SendMsg(const char *host, uint16_t port, uint8_t *msg, uint32_t
 
 int RdmaChannel::SendMsgWithHeader(const char *host, uint16_t port, uint8_t *header, const uint32_t header_len,
                                    uint8_t *body, const uint32_t body_len) {
-  uint32_t data_len = header_len + body_len;
+  uint32_t data_len = sizeof(RdmaDataHeader) + header_len + body_len;
   uint32_t data_id = atomic_fetch_add(&data_id_, 1);
   data_id += 1;
 
@@ -146,7 +147,7 @@ int RdmaChannel::SendMsgWithHeader(const char *host, uint16_t port, uint8_t *hea
   send_buff[2].channel_ = this;
   send_buff[2].mr_ = GET_MR(body);
 
-  if (IS_SMALL(data_len + sizeof(RdmaDataHeader))) {
+  if (IS_SMALL(data_len)) {
     rdma_header->data_type = TYPE_SMALL_DATA;
     if (qp_->PostSendAndWait(send_buff, 3, true) < 0) {
       RDMA_ERROR("PostSendAndWait small_data failed");

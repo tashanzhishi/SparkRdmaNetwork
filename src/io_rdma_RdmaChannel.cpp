@@ -37,19 +37,19 @@ JNIEXPORT void JNICALL Java_io_rdma_RdmaChannel_sendHeader
   std::string ip = RdmaChannel::get_ip_from_host(std::string(host));
   RdmaChannel *channel = RdmaChannel::get_channel_from_ip(ip);
 
-  static jclass ByteBuffer = env->FindClass("java/nio/ByteBuffer");
+  jclass ByteBuffer = env->FindClass("java/nio/ByteBuffer");
   if (ByteBuffer == nullptr) {
     RDMA_ERROR("find class java.nio.ByteBuffer failed");
     return;
   }
   // ByteBuffer.array()
-  static jmethodID array = env->GetMethodID(ByteBuffer, "array", "()[B");
+  jmethodID array = env->GetMethodID(ByteBuffer, "array", "()[B");
   if (array == nullptr) {
     RDMA_ERROR("find ByteBuffer method array failed");
     return;
   }
   // ByteBuffer.position()
-  static jmethodID position = env->GetMethodID(ByteBuffer, "position", "()I");
+  jmethodID position = env->GetMethodID(ByteBuffer, "position", "()I");
   if (position == nullptr) {
     RDMA_ERROR("find ByteBuffer method position failed");
     return;
@@ -94,19 +94,19 @@ JNIEXPORT void JNICALL Java_io_rdma_RdmaChannel_sendHeaderWithBody
   std::string ip = RdmaChannel::get_ip_from_host(std::string(host));
   RdmaChannel *channel = RdmaChannel::get_channel_from_ip(ip);
 
-  static jclass ByteBuffer = env->FindClass("java/nio/ByteBuffer");
+  jclass ByteBuffer = env->FindClass("java/nio/ByteBuffer");
   if (ByteBuffer == nullptr) {
     RDMA_ERROR("find class java.nio.ByteBuffer failed");
     return;
   }
   // ByteBuffer.array()
-  static jmethodID array = env->GetMethodID(ByteBuffer, "array", "()[B");
+  jmethodID array = env->GetMethodID(ByteBuffer, "array", "()[B");
   if (array == nullptr) {
     RDMA_ERROR("find ByteBuffer.array() failed");
     return;
   }
   // ByteBuffer.position()
-  static jmethodID position = env->GetMethodID(ByteBuffer, "position", "()I");
+  jmethodID position = env->GetMethodID(ByteBuffer, "position", "()I");
   if (position == nullptr) {
     RDMA_ERROR("find ByteBuffer.position() failed");
     return;
@@ -134,6 +134,7 @@ JNIEXPORT void JNICALL Java_io_rdma_RdmaChannel_sendHeaderWithBody
     memcpy(rdma_header, header, hlen);
     free(header);
   }
+
   uint8_t *body = (uint8_t *)env->GetDirectBufferAddress(jbody);
   if (body == nullptr) {
     jbyteArray byte_array = (jbyteArray)env->CallObjectMethod(jbody, array);
@@ -149,8 +150,8 @@ JNIEXPORT void JNICALL Java_io_rdma_RdmaChannel_sendHeaderWithBody
     env->GetByteArrayRegion(byte_array, pos, blen, (jbyte*)rdma_body);
   } else {
     rdma_body = (uint8_t*)RMALLOC(blen);
-    memcpy(rdma_body, header, hlen);
-    free(header);
+    memcpy(rdma_body, body, hlen);
+    free(body);
   }
 
   channel->SendMsgWithHeader(host, port, rdma_header, hlen, rdma_body, blen);

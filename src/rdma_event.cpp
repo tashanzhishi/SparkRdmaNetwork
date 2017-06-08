@@ -14,6 +14,7 @@
 #include "rdma_logger.h"
 #include "rdma_thread.h"
 #include "rdma_memory_pool.h"
+#include "jni_common.h"
 
 namespace SparkRdmaNetwork {
 
@@ -160,7 +161,32 @@ void RdmaEvent::HandleRecvDataEvent(void *rdma_channel) {
   while (!channel->recv_data_.empty()) {
     BufferDescriptor bd;
     channel->recv_data_.pop(bd);
-    //
+
+    RdmaDataHeader *header = (RdmaDataHeader *)bd.buffer_;
+    uint8_t *copy_buff = nullptr;
+    int start = 0, len = 0;
+    if (header->data_type == TYPE_SMALL_DATA) {
+      copy_buff = bd.buffer_;
+      start = sizeof(RdmaDataHeader);
+      len = header->data_len - sizeof(RdmaDataHeader);
+    } else if (header->data_type == TYPE_WRITE_SUCCESS) {
+      RdmaRpc *rpc = (RdmaRpc *)bd.buffer_;
+      copy_buff = (uint8_t *)rpc->addr;
+      start = sizeof(RdmaRpc);
+      len = rpc->data_len - sizeof(RdmaRpc);
+      RFREE(rpc, k1KB);
+    } else {
+      RDMA_ERROR("the recv buffer type must be small_data or write_success");
+      abort();
+    }
+
+    jbyteArray jba = jni_alloc_byte_array(len);
+    set_byte_array_region(jba, start, len, copy_buff);
+    jni_channel_callback(channel->get_ip().c_str(), jba, len);
+
+    RFREE(copy_buff, start + len);
+
+    RDMA_DEBUG("handle a data success");
   }
   channel->recv_data_running_ = false;
 }

@@ -38,8 +38,8 @@ struct RdmaDataHeader {
 
 struct RdmaRpc {
   RdmaDataType data_type;
-  uint32_t data_id;
   uint32_t data_len;
+  uint32_t data_id;
   uint32_t rkey;
   uint64_t addr;
 }__attribute__((__packed__));

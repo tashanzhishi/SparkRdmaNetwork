@@ -49,6 +49,7 @@ public:
 
   CompletionQueue *get_completion_cq() const { return cq_;}
   QueuePair *get_queue_pair() const { return qp_; }
+  std::string& get_ip() const { return ip_; }
   std::pair<BufferDescriptor*, int> get_data_from_id(uint32_t id) {
     std::lock_guard lock(id2data_lock_);
     if (id2data_.find(id) == id2data_.end()) {

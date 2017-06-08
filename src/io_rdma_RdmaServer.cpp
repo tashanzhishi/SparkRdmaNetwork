@@ -69,7 +69,7 @@ JNIEXPORT void JNICALL Java_io_rdma_RdmaServer_destroy
 }
 
 
-void jni_channel_callback(char *remote_host, jobject msg, int len) {
+void jni_channel_callback(const char *remote_host, jobject msg, int len) {
   JNIEnv *env;
   g_jvm->AttachCurrentThread((void **)&env, nullptr);
   jstring host = env->NewStringUTF(remote_host);
