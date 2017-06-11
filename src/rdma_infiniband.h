@@ -22,7 +22,7 @@ const int kMinCqe = 1024;
 const int kMaxWr = 1024;
 const uint8_t kIbPortNum = 1;
 const int kSmallPreReceive = 2048; // 1kb
-const int kBigPreReceive = 128;    // 1kb
+const int kBigPreReceive = 512;    // 1kb
 
 //
 class RdmaInfiniband {
@@ -129,9 +129,9 @@ public:
   public:
     CompletionQueue(RdmaInfiniband& infiniband, int min_cqe = kMinCqe);
     ~CompletionQueue();
-    ibv_cq* get_send_cq() { return send_cq_;}
-    ibv_cq* get_recv_cq() { return recv_cq_;}
-    ibv_comp_channel* get_recv_cq_channel() { return recv_cq_channel_;}
+    inline ibv_cq* get_send_cq() { return send_cq_;}
+    inline ibv_cq* get_recv_cq() { return recv_cq_;}
+    inline ibv_comp_channel* get_recv_cq_channel() { return recv_cq_channel_;}
 
   private:
     ibv_comp_channel* recv_cq_channel_;
@@ -159,9 +159,11 @@ public:
     int ModifyQpToInit();
     int ModifyQpToRTS();
     int ModifyQpToRTR(RdmaConnectionInfo& info);
+
     void PreReceive(RdmaChannel *channel, int small = kSmallPreReceive, int big = kBigPreReceive);
     int PostReceiveWithNum(RdmaChannel *channel, bool is_small, int num);
-    int PostReceive(RdmaChannel *channel, bool is_small);
+    int PostReceiveOneWithBuffer(BufferDescriptor *buf, bool is_small);
+
     int PostSendAndWait(BufferDescriptor *buf, int num, bool is_small);
     int PostWriteAndWait(BufferDescriptor *buf, int num, uint64_t addr, uint32_t rkey);
     static const char* WcStatusToString(int status);
@@ -210,6 +212,11 @@ private:
   Device device_;
   ProtectionDomain pd_;
 };
+
+
+typedef RdmaInfiniband::QueuePair QueuePair;
+typedef RdmaInfiniband::CompletionQueue CompletionQueue;
+typedef RdmaInfiniband::BufferDescriptor BufferDescriptor;
 
 } // namespace SparkRdmaNetwork
 

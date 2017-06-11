@@ -46,6 +46,8 @@ struct RdmaRpc {
 
 const int kRdmaMemoryFlag = IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_WRITE;
 
+#define SMALL_DATA true
+#define BIG_DATA false
 inline bool IS_SMALL(uint32_t len) {
   return len + sizeof(RdmaDataHeader) <= 1024;
 }

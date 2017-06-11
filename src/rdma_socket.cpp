@@ -5,28 +5,36 @@
 #include "rdma_socket.h"
 
 #include "rdma_logger.h"
+#include "rdma_thread.h"
 
 
 namespace SparkRdmaNetwork {
 
-std::string RdmaSocket::local_ip_("localhost_");
+std::string RdmaSocket::local_ip_ = kLocalIp;
 
 std::string RdmaSocket::GetIpFromHost(const char *host) {
-  if (host == nullptr)
-    return kIsServer;
+  {
+    ReadLock rd_lock(Host2IpLock);
+    if (Host2Ip.find(host) != Host2Ip.end())
+      return Host2Ip.at(host);
+  }
+  WriteLock wr_lock(Host2IpLock);
+  if (Host2Ip.find(host) != Host2Ip.end())
+    return Host2Ip.at(host);
   struct hostent *he = gethostbyname(host);
   if (he == NULL) {
-    RDMA_ERROR("gethostbyname: {} failed", host);
+    RDMA_ERROR("gethostbyname {} failed", host);
     abort();
   }
   char ip_str[kIpCharSize] = {'\0'};
   inet_ntop(he->h_addrtype, he->h_addr, ip_str, kIpCharSize);
   std::string ip(ip_str);
+  Host2Ip[host] = ip;
   return ip;
 }
 
-const std::string& RdmaSocket::get_local_ip() const {
-  if (local_ip_ == "localhost_") {
+const std::string& RdmaSocket::GetLocalIp() {
+  if (local_ip_ == kLocalIp) {
     char host_name[kIpCharSize] = {'\0'};
     if (gethostname(host_name, sizeof(host_name)) != 0) {
       RDMA_ERROR("gethostname error: {}", strerror(errno));
@@ -64,7 +72,7 @@ void RdmaSocket::Socket() {
     RDMA_ERROR("{} socket error: {}", ip_, strerror(errno));
     abort();
   }
-  RDMA_TRACE("socket success");
+  RDMA_DEBUG("socket success");
 
   // server
   if (ip_ == kIsServer) {
@@ -73,16 +81,16 @@ void RdmaSocket::Socket() {
       RDMA_ERROR("setsockopt reuse error: {}", strerror(errno));
       abort();
     }
-    RDMA_TRACE("setsockopt reuse success");
+    RDMA_DEBUG("setsockopt reuse success");
   }
 }
 
 void RdmaSocket::Bind() {
-  if (bind(socket_fd_, static_cast<struct sockaddr*>(&addr_), sizeof(addr_)) != 0) {
+  if (bind(socket_fd_, (struct sockaddr*)(&addr_), sizeof(addr_)) != 0) {
     RDMA_ERROR("bind error: {}", strerror(errno));
     abort();
   }
-  RDMA_TRACE("bind success");
+  RDMA_DEBUG("bind success");
 }
 
 void RdmaSocket::Listen() {
@@ -90,7 +98,7 @@ void RdmaSocket::Listen() {
     RDMA_ERROR("listen error: {}", strerror(errno));
     abort();
   }
-  RDMA_TRACE("listen success");
+  RDMA_DEBUG("listen success");
 }
 
 std::shared_ptr<RdmaSocket> RdmaSocket::Accept() {
@@ -108,6 +116,9 @@ std::shared_ptr<RdmaSocket> RdmaSocket::Accept() {
   RDMA_DEBUG("accept %s, fd=%d", remote_ip, fd);
 
   std::shared_ptr<RdmaSocket> client = new RdmaSocket(remote_ip);
+  client->socket_fd_ = fd;
+  memcpy(&client->addr_, &client_addr, sizeof(client_addr));
+  client->ip_ = std::string(remote_ip);
   return client;
 }
 

@@ -12,18 +12,21 @@
 
 #include "rdma_infiniband.h"
 #include "rdma_socket.h"
+#include "rdma_event.h"
 
 namespace SparkRdmaNetwork {
 
 class RdmaServer {
 public:
   RdmaServer() : server_(nullptr) {}
+  ~RdmaServer() {};
 
   int InitServer(const char *host = nullptr, uint16_t port = kDefaultPort);
   void DestroyServer();
 
+  void AcceptThreadFunc(const char *host, uint16_t port);
+
   std::thread AcceptThread;
-  void Accept(const char *host, uint16_t port);
 
 private:
   int InitServerSocket(const char *host, uint16_t port);

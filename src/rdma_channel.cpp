@@ -16,36 +16,24 @@
 
 namespace SparkRdmaNetwork {
 
-const std::string RdmaChannel::get_ip_from_host(const std::string& host) {
-  {
-    ReadLock rd_lock(Host2IpLock);
-    if (Host2Ip.find(host) != Host2Ip.end())
-      return Host2Ip.at(host);
-  }
-
-  WriteLock wr_lock(Host2IpLock);
-  Host2Ip[host] = RdmaSocket::GetIpFromHost(host.c_str());
-  RDMA_TRACE("GetIpFromHost {} -> {}", host, Host2Ip[host]);
-  return Host2Ip[host];
-}
-
-RdmaChannel* RdmaChannel::get_channel_from_ip(const std::string &ip) {
+RdmaChannel* RdmaChannel::GetChannelByIp(const std::string &ip) {
   {
     ReadLock(Ip2ChannelLock);
     if (Ip2Channel.find(ip) != Ip2Channel.end())
       return Ip2Channel.at(ip);
   }
   WriteLock wr_lock(Ip2ChannelLock);
+  if (Ip2Channel.find(ip) != Ip2Channel.end())
+    return Ip2Channel.at(ip);
   RdmaChannel *channel = new RdmaChannel();
   Ip2Channel[ip] = channel;
-  RDMA_TRACE("insert a RdmaChannel to map, {}", ip);
+  RDMA_DEBUG("insert a RdmaChannel to map, {}", ip);
   return channel;
 }
 
 RdmaChannel::RdmaChannel(const char *host, uint16_t port) :
-    ip_(""), port_(kDefaultPort), cq_(nullptr), qp_(nullptr), data_id_(0), is_ready(0),
-    recv_data_running_(false), req_rpc_running_(false), ack_rpc_running_(false) {
-  //Init(host, port);
+    ip_(""), port_(kDefaultPort), cq_(nullptr), qp_(nullptr), data_id_(0), is_ready_(0), event_(nullptr) {
+
 }
 
 RdmaChannel::~RdmaChannel() {
@@ -59,17 +47,13 @@ int RdmaChannel::Init(const char *c_host, uint16_t port) {
   RDMA_TRACE("init channel to {}", c_host);
 
   port_ = port;
-
-  if (c_host) {
-    const std::string host(c_host);
-    ip_ = get_ip_from_host(host);
-  }
+  ip_ = RdmaSocket::GetIpFromHost(c_host);
 
   std::shared_ptr<RdmaSocket> socket = new RdmaSocket(ip_, port_);
   socket->Socket();
   socket->Connect();
 
-  if (InitChannel(socket) < 0) {
+  if (InitChannel(socket, false) < 0) {
     RDMA_ERROR("init rdma channel failed");
     abort();
   }
@@ -109,10 +93,7 @@ int RdmaChannel::SendMsg(const char *host, uint16_t port, uint8_t *msg, uint32_t
     delete[] send_buff;
   } else {
     header->data_type = TYPE_RPC_REQ;
-    {
-      std::lock_guard lock(id2data_lock_);
-      id2data_[data_id] = std::pair<BufferDescriptor*, int>(send_buff, 2);
-    }
+    event_->PutDataById(data_id, send_buff, 2);
     if (qp_->PostSendAndWait(send_buff, 1, false) < 0) {
       RDMA_ERROR("PostSendAndWait req rpc failed");
       abort();
@@ -159,10 +140,7 @@ int RdmaChannel::SendMsgWithHeader(const char *host, uint16_t port, uint8_t *hea
     delete[] send_buff;
   } else {
     rdma_header->data_type = TYPE_RPC_REQ;
-    {
-      std::lock_guard lock(id2data_lock_);
-      id2data_[data_id] = std::pair<BufferDescriptor*, int>(send_buff, 3);
-    }
+    event_->PutDataById(data_id, send_buff, 3);
     if (qp_->PostSendAndWait(send_buff, 1, false) < 0) {
       RDMA_ERROR("PostSendAndWait req rpc failed");
       abort();
@@ -172,7 +150,7 @@ int RdmaChannel::SendMsgWithHeader(const char *host, uint16_t port, uint8_t *hea
   return 0;
 }
 
-int RdmaChannel::InitChannel(std::shared_ptr<RdmaSocket> socket) {
+int RdmaChannel::InitChannel(std::shared_ptr<RdmaSocket> socket, bool is_accept) {
   RDMA_TRACE("start create cq qp etc.");
   RdmaInfiniband *infiniband = RdmaInfiniband::GetRdmaInfiniband();
 
@@ -182,6 +160,7 @@ int RdmaChannel::InitChannel(std::shared_ptr<RdmaSocket> socket) {
       cq_ = infiniband->CreateCompleteionQueue();
       qp_ = infiniband->CreateQueuePair(cq_);
       qp_->PreReceive(this);
+      event_ = new RdmaEvent(ip_, cq_->get_recv_cq_channel(), qp_);
     }
   }
 
@@ -198,21 +177,26 @@ int RdmaChannel::InitChannel(std::shared_ptr<RdmaSocket> socket) {
   local_info.psn = qp_->get_init_psn();
   local_info.lid = qp_->get_local_lid();
 
-  socket->WriteInfo(local_info);
-  socket->ReadInfo(remote_info);
+  if (is_accept) {
+    socket->ReadInfo(remote_info);
+    socket->WriteInfo(local_info);
+  } else {
+    socket->WriteInfo(local_info);
+    socket->ReadInfo(remote_info);
+  }
 
   {
     std::lock_guard lock(channel_lock_);
-    if (is_ready == 0) {
+    if (is_ready_ == 0) {
       if (qp_->ModifyQpToRTS() < 0) {
         RDMA_ERROR("ModifyQpToRTS failed");
-        return -1;
+        abort();
       }
       if (qp_->ModifyQpToRTR(remote_info) < 0) {
         RDMA_ERROR("ModifyQpToRTR failed");
-        return -1;
+        abort();
       }
-      is_ready = 1;
+      is_ready_ = 1;
     }
   }
 

@@ -244,25 +244,26 @@ void test_function() {
     func_qee.pop();
   }
 }
-
+*/
 #include <thread>
+#include <functional>
 class test{
 public:
+  test() {
+    function<void()> func = bind(&test::print, this);
+    sth = thread(func);
+  }
+  ~test() {
+    sth.join();
+  }
   void print(){ cout << "hehe" << endl; }
-  static thread sth;
+  thread sth;
 };
-thread test::sth;
-void func(int a) {
-  cout << "func " << a << endl;
-}
-void test_static_thread() {
+void test_thread() {
   test t;
-  test::sth = thread(func, 3);
-  test::sth.join();
-
-  t.print();
+  sleep(1);
 }
-
+/*
 #include <thread>
 #include <functional>
 #include <boost/thread/thread_pool.hpp>
@@ -270,21 +271,27 @@ void test_static_thread() {
 typedef function<void(int)> vi_func;
 class test {
 public:
-  test() : pool_(10) {}
-  ~test() {pool_.close();}
+  test() {}
+  ~test() {}
   void run() {
     vi_func f = bind(&test::thread_func, this, std::placeholders::_1);
-    pool_.submit(bind(f, 3));
+    for (int i = 0; i < 5; ++i) {
+      pool_.submit(bind(f, i));
+    }
   }
   void thread_func(int a) {
-    cout << a << " thread2 " << this_thread::get_id() << endl;
+    cout << a << " thread " << this_thread::get_id() << endl;
   }
-  boost::basic_thread_pool pool_;
+  static boost::basic_thread_pool pool_;
 };
+boost::basic_thread_pool test::pool_(5);
 void test_boost_thread_pool() {
-  test x;
+  test x, y;
   x.run();
+  y.run();
+  test::pool_.close();
 }
+
 
 #include <thread>
 #include <memory>
@@ -339,7 +346,7 @@ void test_boost_lock_free() {
   sleep(1);
   pool.close();
   cout << "all end" << endl;
-}*/
+}
 
 struct arr {
   int a;
@@ -351,10 +358,12 @@ void test_class_array() {
   arr *x = new arr[3];
   x[0].print();
   for(int i=0; i<3; i++) {
-    new(x+i) arr(i); // ???
+    new(x+i) arr(i);
     x[i].print();
   }
 }
+*/
+
 
 int main(int argc, char *argv[]) {
   //test1();
@@ -369,10 +378,13 @@ int main(int argc, char *argv[]) {
   //test_vector();
   //test_while();
   //test_function();
-  //test_static_thread();
+  test_thread();
   //test_boost_thread_pool();
   //test_local_queue();
   //test_boost_lock_free();
-  test_class_array();
+  //test_class_array();
+
+
+
   return 0;
 }

@@ -13,7 +13,7 @@ namespace SparkRdmaNetwork {
 // -------------------
 // - CompletionQueue -
 // -------------------
-RdmaInfiniband::CompletionQueue::CompletionQueue(RdmaInfiniband &infiniband, int min_cqe = kMinCqe) {
+RdmaInfiniband::CompletionQueue::CompletionQueue(RdmaInfiniband &infiniband, int min_cqe) {
   RDMA_TRACE("construct CompletionQueue");
 
   recv_cq_channel_ = ibv_create_comp_channel(infiniband.device_.ctx_);
@@ -62,7 +62,7 @@ RdmaInfiniband::QueuePair::QueuePair(RdmaInfiniband &infiniband, ibv_qp_type qp_
       .cap = {
           .max_send_wr = max_send_wr,
           .max_recv_wr = max_recv_wr,
-          .max_send_sge = 1,   // ?????
+          .max_send_sge = 3,   // ?????
           .max_recv_sge = 1,  // ????
           .max_inline_data = 256,
       },
@@ -72,7 +72,10 @@ RdmaInfiniband::QueuePair::QueuePair(RdmaInfiniband &infiniband, ibv_qp_type qp_
   GPR_ASSERT(small_qp_);
   big_qp_ = ibv_create_qp(pd_, &init_attr);
   GPR_ASSERT(big_qp_);
-  ModifyQpToInit();
+  if (ModifyQpToInit() < 0) {
+    RDMA_ERROR("ModifyQpToInit failed");
+    abort();
+  }
 
   ibv_port_attr port_attr;
   if (ibv_query_port(infiniband.device_.ctx_, kIbPortNum, &port_attr) < 0) {
@@ -165,13 +168,8 @@ int RdmaInfiniband::QueuePair::ModifyQpToRTR(RdmaConnectionInfo &info) {
   return 0;
 }
 
-int RdmaInfiniband::QueuePair::PostReceive(RdmaChannel *channel, bool is_small) {
-  BufferDescriptor *buffer = new BufferDescriptor();
-  buffer->buffer_ = (uint8_t *)RMALLOC(k1KB);
+int RdmaInfiniband::QueuePair::PostReceiveOneWithBuffer(BufferDescriptor *buffer, bool is_small) {
   buffer->bytes_ = k1KB;
-  buffer->mr_ = GET_MR(buffer->buffer_);
-  buffer->channel_ = channel;
-
   ibv_sge sge = {
       .addr = (uint64_t)buffer->buffer_,
       .length = buffer->bytes_,
@@ -229,11 +227,11 @@ int RdmaInfiniband::QueuePair::PostReceiveWithNum(RdmaChannel *channel, bool is_
 }
 
 void RdmaInfiniband::QueuePair::PreReceive(RdmaChannel *channel, int small, int big) {
-  if (PostReceiveWithNum(channel, 1, small) < 0) {
+  if (PostReceiveWithNum(channel, SMALL_DATA, small) < 0) {
     RDMA_ERROR("PreReceive small qp failed");
     abort();
   }
-  if (PostReceiveWithNum(channel, 0, big) < 0) {
+  if (PostReceiveWithNum(channel, BIG_DATA, big) < 0) {
     RDMA_ERROR("PreReceive big qp failed");
     abort();
   }
@@ -352,7 +350,7 @@ RdmaInfiniband::~RdmaInfiniband() {
 }
 
 RdmaInfiniband::CompletionQueue* RdmaInfiniband::CreateCompleteionQueue(int min_cqe) {
-  return new CompletionQueue(*this);
+  return new CompletionQueue(*this, min_cqe);
 }
 
 RdmaInfiniband::QueuePair* RdmaInfiniband::CreateQueuePair(ibv_cq *send_cq, ibv_cq *recv_cq, ibv_qp_type qp_type,

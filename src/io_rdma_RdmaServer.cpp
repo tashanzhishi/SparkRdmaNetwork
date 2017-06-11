@@ -22,8 +22,8 @@ static RdmaServer *server = nullptr;
  * Method:    init
  * Signature: (Ljava/lang/String;ILio/rdma/RdmaChannelHandler;Lio/netty/buffer/PooledByteBufAllocator;)Z
  */
-JNIEXPORT jboolean JNICALL Java_io_rdma_RdmaServer_init
-    (JNIEnv *env, jobject obj, jstring jhost, jint jport, jobject jrch, jobject jalloc) {
+JNIEXPORT jboolean JNICALL Java_io_rdma_RdmaServer_init (
+    JNIEnv *env, jobject obj, jstring jhost, jint jport, jobject jrch, jobject jalloc) {
   const char *host = env->GetStringUTFChars(jhost, nullptr);
   int port = jport;
 
@@ -82,7 +82,7 @@ jbyteArray jni_alloc_byte_array(int bytes) {
   JNIEnv *env;
   g_jvm->AttachCurrentThread((void **)&env, nullptr);
   jbyteArray jba = env->NewByteArray(bytes);
-  jbyteArray jba_global = (jbyteArray)env->NewGlobalRef(static_cast<jobject >(jba));
+  jbyteArray jba_global = (jbyteArray)env->NewGlobalRef(static_cast<jobject>(jba));
   RDMA_DEBUG("jni alloc byte {}", bytes);
   g_jvm->DetachCurrentThread();
   return jba_global;

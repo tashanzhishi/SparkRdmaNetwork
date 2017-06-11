@@ -6,6 +6,7 @@
 #define SPARKRDMA_RDMA_LINK_H
 
 #include <string>
+#include <boost/thread/shared_mutex.hpp>
 
 #include <cstdint>
 #include <sys/socket.h>
@@ -23,12 +24,13 @@ namespace SparkRdmaNetwork {
 const int kIpCharSize = 32;
 const uint16_t kDefaultPort = 6789;
 const std::string kIsServer("SERVER");
+const std::string kLocalIp("localhost_");
 
 
 class RdmaSocket {
 public:
   static std::string GetIpFromHost(const char *host);
-  static const std::string& get_local_ip() const;
+  static const std::string& GetLocalIp();
 
   RdmaSocket(const std::string ip = kIsServer, const uint16_t port = kDefaultPort);
   ~RdmaSocket();
@@ -46,9 +48,11 @@ public:
   int WriteInfo(RdmaConnectionInfo& info);
   int ReadInfo(RdmaConnectionInfo& info);
 
+  static std::string local_ip_;
+  static std::map<std::string, std::string> Host2Ip;
+  static boost::shared_mutex Host2IpLock;
 
 private:
-  static std::string local_ip_;
 
   std::string ip_;
   uint16_t port_;
