@@ -32,7 +32,7 @@ void RdmaServer::DestroyServer() {
 
   RdmaChannel::DestroyAllChannel();
 
-  delete RdmaInfiniband::GetRdmaInfiniband();
+  //delete RdmaInfiniband::GetRdmaInfiniband();
 }
 
 int RdmaServer::InitServerSocket(const char *host, uint16_t port) {
@@ -43,7 +43,9 @@ int RdmaServer::InitServerSocket(const char *host, uint16_t port) {
   server_->Socket();
   server_->Bind();
   server_->Listen();
-  AcceptThread = std::thread(AcceptThreadFunc, host, port);
+  std::function<void(const char*, uint16_t)> accept_func =
+      std::bind(&RdmaServer::AcceptThreadFunc, this, std::placeholders::_1, std::placeholders::_2);
+  AcceptThread = std::thread(accept_func, host, port);
   return 0;
 }
 

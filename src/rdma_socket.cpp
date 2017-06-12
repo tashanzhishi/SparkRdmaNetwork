@@ -115,7 +115,7 @@ std::shared_ptr<RdmaSocket> RdmaSocket::Accept() {
   strcpy(remote_ip, inet_ntoa(client_addr.sin_addr));
   RDMA_DEBUG("accept %s, fd=%d", remote_ip, fd);
 
-  std::shared_ptr<RdmaSocket> client = new RdmaSocket(remote_ip);
+  std::shared_ptr<RdmaSocket> client(new RdmaSocket(remote_ip));
   client->socket_fd_ = fd;
   memcpy(&client->addr_, &client_addr, sizeof(client_addr));
   client->ip_ = std::string(remote_ip);
@@ -123,7 +123,7 @@ std::shared_ptr<RdmaSocket> RdmaSocket::Accept() {
 }
 
 void RdmaSocket::Connect() {
-  if (connect(socket_fd_, static_cast<struct sockaddr*>(&addr_), sizeof(addr_)) != 0) {
+  if (connect(socket_fd_, (struct sockaddr*)(&addr_), sizeof(addr_)) != 0) {
     RDMA_ERROR("connect {} error: {}", ip_,strerror(errno));
     abort();
   }
@@ -131,12 +131,12 @@ void RdmaSocket::Connect() {
 }
 
 int RdmaSocket::WriteInfo(RdmaConnectionInfo& info) {
-  RdmaConnectionInfo tmp = {
-      .lid = htons(info.lid),
-      .psn = htonl(info.psn),
-      .small_qpn = htonl(info.small_qpn),
-      .big_qpn = htonl(info.big_qpn)
-  };
+  RdmaConnectionInfo tmp;
+  tmp.lid = htons(info.lid);
+  tmp.psn = htonl(info.psn);
+  tmp.small_qpn = htonl(info.small_qpn);
+  tmp.big_qpn = htonl(info.big_qpn);
+
   if (write(socket_fd_, &tmp, sizeof(tmp)) < 0) {
     RDMA_ERROR("write infomation to {} failed", ip_);
     return -1;

@@ -15,17 +15,9 @@ RdmaMemoryPool::RdmaMemoryPool(ibv_pd *pd) {
   pd_ = pd;
 }
 
-RdmaMemoryPool* RdmaMemoryPool::GetMemoryPool(ibv_pd *pd) {
+RdmaMemoryPool* RdmaMemoryPool::InitMemoryPool(ibv_pd *pd) {
   if (memory_pool_ == nullptr) {
     memory_pool_ = new RdmaMemoryPool(pd);
-  }
-  return memory_pool_;
-}
-
-inline RdmaMemoryPool* RdmaMemoryPool::GetMemoryPool() {
-  if (memory_pool_ == nullptr) {
-    RDMA_ERROR("please use GetMemoryPool(*pd) first");
-    abort();
   }
   return memory_pool_;
 }

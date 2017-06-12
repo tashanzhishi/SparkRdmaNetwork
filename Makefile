@@ -6,7 +6,7 @@ SOURCE_DIR := ./src
 OBJECT_DIR := ./obj
 
 SOURCES := $(wildcard $(SOURCE_DIR)/*.cpp)
-OBJS := $(patsubst %.cpp, $(OBJECT_DIR)/%.o $(notdir $(SOURCES)))
+OBJS    := $(patsubst %.cpp, $(OBJECT_DIR)/%.o, $(notdir $(SOURCES)))
 
 OUTPUT := ./lib/libSparkRdma.so
 

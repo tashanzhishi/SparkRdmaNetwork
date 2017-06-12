@@ -153,12 +153,12 @@ int RdmaEvent::Poll(int timeout) {
         RdmaDataHeader *header = (RdmaDataHeader *) bd->buffer_;
         if (header->data_type == TYPE_SMALL_DATA || header->data_type == TYPE_WRITE_SUCCESS) {
           {
-            std::lock_guard lock(recv_data_lock_);
+            std::lock_guard<std::mutex> lock(recv_data_lock_);
             recv_data_[header->data_id] = bd;
           }
           recv_event_num++;
           {
-            std::lock_guard lock(recv_running_lock_);
+            std::lock_guard<std::mutex> lock(recv_running_lock_);
             if (recv_runing_ == 0) {
               HandleFunction handle = std::bind(&RdmaEvent::HandleRecvDataEvent, this);
               thread_pool_.submit(handle);
@@ -169,7 +169,7 @@ int RdmaEvent::Poll(int timeout) {
           send_data_.push(bd);
           send_event_num++;
           {
-            std::lock_guard lock(send_running_lock_);
+            std::lock_guard<std::mutex> lock(send_running_lock_);
             if (send_running_ == 0) {
               HandleFunction handle = std::bind(&RdmaEvent::HandleSendDataEvent, this);
               thread_pool_.submit(handle);
@@ -193,7 +193,7 @@ void RdmaEvent::HandleRecvDataEvent() {
     BufferDescriptor *bd = nullptr;
     uint32_t data_id = recv_data_id_;
     {
-      std::lock_guard lock(recv_data_lock_);
+      std::lock_guard<std::mutex> lock(recv_data_lock_);
       if (recv_data_.find(data_id) == recv_data_.end()) {
         recv_runing_ = 0;
         return;
@@ -253,7 +253,7 @@ void RdmaEvent::HandleRecvDataEvent() {
 void RdmaEvent::HandleSendDataEvent() {
   while (1) {
     if (send_data_.empty()) {
-      std::lock_guard lock(send_running_lock_);
+      std::lock_guard<std::mutex> lock(send_running_lock_);
       if (send_data_.empty()) {
         send_running_ = 0;
         return;
@@ -356,7 +356,7 @@ void RdmaEvent::HandleAckRpcEvent(BufferDescriptor *bd) {
 }
 
 std::pair<BufferDescriptor*, int> RdmaEvent::GetDataById(uint32_t id) {
-  std::lock_guard lock(id2data_lock_);
+  std::lock_guard<std::mutex> lock(id2data_lock_);
   if (id2data_.find(id) == id2data_.end()) {
     RDMA_ERROR("id2data canot find data_id {}", id);
     return std::pair<BufferDescriptor*, int>(nullptr, 0);
@@ -367,7 +367,7 @@ std::pair<BufferDescriptor*, int> RdmaEvent::GetDataById(uint32_t id) {
 }
 
 void RdmaEvent::PutDataById(uint32_t id, BufferDescriptor *buf, int num) {
-  std::lock_guard lock(id2data_lock_);
+  std::lock_guard<std::mutex> lock(id2data_lock_);
   id2data_[id] = std::pair<BufferDescriptor*, int>(buf, num);
 }
 

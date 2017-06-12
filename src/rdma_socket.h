@@ -22,7 +22,6 @@
 namespace SparkRdmaNetwork {
 
 const int kIpCharSize = 32;
-const uint16_t kDefaultPort = 6789;
 const std::string kIsServer("SERVER");
 const std::string kLocalIp("localhost_");
 

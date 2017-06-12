@@ -9,16 +9,10 @@
 #include <boost/thread/shared_mutex.hpp>
 #include <boost/thread/thread_pool.hpp>
 
-
 typedef boost::shared_lock<boost::shared_mutex> ReadLock;
 typedef boost::unique_lock<boost::shared_mutex> WriteLock;
 
 namespace SparkRdmaNetwork {
-
-class RdmaThreadPool {
-
-};
-
 
 } // namespace SparkRdmaNetwork
 

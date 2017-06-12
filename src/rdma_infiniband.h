@@ -17,7 +17,6 @@
 
 namespace SparkRdmaNetwork {
 
-const uint16_t kDefaultPort = 6789;
 const int kMinCqe = 1024;
 const int kMaxWr = 1024;
 const uint8_t kIbPortNum = 1;
@@ -100,9 +99,8 @@ public:
     ProtectionDomain&operator=(ProtectionDomain&) = delete;
   };
 
-  class RdmaChannel;
   struct BufferDescriptor {
-    BufferDescriptor(uint8_t *buffer, uint32_t bytes, ibv_mr *mr, RdmaChannel *channel) :
+    BufferDescriptor(uint8_t *buffer, uint32_t bytes, ibv_mr *mr, void *channel) :
         buffer_(buffer), bytes_(bytes), mr_(mr), channel_(channel){}
     BufferDescriptor() :
         buffer_(nullptr), bytes_(0), mr_(nullptr), channel_(nullptr){}
@@ -110,7 +108,7 @@ public:
     uint8_t *buffer_;
     uint32_t bytes_;
     ibv_mr *mr_;
-    RdmaChannel *channel_;
+    void *channel_;
   private:
     // no copy and =
     BufferDescriptor(BufferDescriptor&) = delete;
@@ -153,8 +151,8 @@ public:
     int ModifyQpToRTS();
     int ModifyQpToRTR(RdmaConnectionInfo& info);
 
-    void PreReceive(RdmaChannel *channel, int small = kSmallPreReceive, int big = kBigPreReceive);
-    int PostReceiveWithNum(RdmaChannel *channel, bool is_small, int num);
+    void PreReceive(void *channel, int small = kSmallPreReceive, int big = kBigPreReceive);
+    int PostReceiveWithNum(void *channel, bool is_small, int num);
     int PostReceiveOneWithBuffer(BufferDescriptor *buf, bool is_small);
 
     int PostSendAndWait(BufferDescriptor *buf, int num, bool is_small);
@@ -179,7 +177,7 @@ public:
 
   static RdmaInfiniband* GetRdmaInfiniband() {
     if (infiniband_ == nullptr) {
-      std::lock_guard lock(lock_);
+      std::lock_guard<std::mutex> lock(lock_);
       if (infiniband_ == nullptr)
         infiniband_ = new RdmaInfiniband();
     }

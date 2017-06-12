@@ -54,8 +54,8 @@ inline std::size_t len2num(std::size_t len, std::size_t size) {
 // this is a singleton instance class
 class RdmaMemoryPool {
 public:
-  static RdmaMemoryPool* GetMemoryPool(ibv_pd *pd);
-  static inline RdmaMemoryPool* GetMemoryPool();
+  static RdmaMemoryPool* InitMemoryPool(ibv_pd *pd);
+  static inline RdmaMemoryPool* GetMemoryPool() { return memory_pool_; };
 
   void *malloc(std::size_t len);
   void free(void *ptr, std::size_t len);

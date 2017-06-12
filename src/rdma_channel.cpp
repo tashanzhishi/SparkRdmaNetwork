@@ -40,7 +40,7 @@ void RdmaChannel::DestroyAllChannel() {
 }
 
 RdmaChannel::RdmaChannel(const char *host, uint16_t port) :
-    ip_(""), port_(kDefaultPort), cq_(nullptr), qp_(nullptr), data_id_(0), is_ready_(0), event_(nullptr) {
+    ip_(""), port_(kDefaultPort), cq_(nullptr), qp_(nullptr), event_(nullptr), is_ready_(0), data_id_(0) {
 
 }
 
@@ -58,7 +58,7 @@ int RdmaChannel::Init(const char *c_host, uint16_t port) {
   port_ = port;
   ip_ = RdmaSocket::GetIpByHost(c_host);
 
-  std::shared_ptr<RdmaSocket> socket = new RdmaSocket(ip_, port_);
+  std::shared_ptr<RdmaSocket> socket(new RdmaSocket(ip_, port_));
   socket->Socket();
   socket->Connect();
 
@@ -71,7 +71,7 @@ int RdmaChannel::Init(const char *c_host, uint16_t port) {
 
 int RdmaChannel::SendMsg(const char *host, uint16_t port, uint8_t *msg, uint32_t len) {
   RDMA_TRACE("send msg {}:{}", host, len);
-  uint32_t data_id = atomic_fetch_add(&data_id_, 1);
+  uint32_t data_id = std::atomic_fetch_add(&data_id_, (uint32_t)1);
   data_id += 1;
   uint32_t data_len = len + sizeof(RdmaDataHeader);
 
@@ -115,7 +115,7 @@ int RdmaChannel::SendMsg(const char *host, uint16_t port, uint8_t *msg, uint32_t
 int RdmaChannel::SendMsgWithHeader(const char *host, uint16_t port, uint8_t *header, const uint32_t header_len,
                                    uint8_t *body, const uint32_t body_len) {
   uint32_t data_len = sizeof(RdmaDataHeader) + header_len + body_len;
-  uint32_t data_id = atomic_fetch_add(&data_id_, 1);
+  uint32_t data_id = std::atomic_fetch_add(&data_id_, (uint32_t)1);
   data_id += 1;
 
   RdmaDataHeader *rdma_header = (RdmaDataHeader*)header;
@@ -164,7 +164,7 @@ int RdmaChannel::InitChannel(std::shared_ptr<RdmaSocket> socket, bool is_accept)
   RdmaInfiniband *infiniband = RdmaInfiniband::GetRdmaInfiniband();
 
   {
-    std::lock_guard lock(channel_lock_);
+    std::lock_guard<std::mutex> lock(channel_lock_);
     if (cq_ == nullptr) {
       cq_ = infiniband->CreateCompleteionQueue();
       qp_ = infiniband->CreateQueuePair(cq_);
@@ -190,7 +190,7 @@ int RdmaChannel::InitChannel(std::shared_ptr<RdmaSocket> socket, bool is_accept)
   }
 
   {
-    std::lock_guard lock(channel_lock_);
+    std::lock_guard<std::mutex> lock(channel_lock_);
     if (is_ready_ == 0) {
       if (qp_->ModifyQpToRTS() < 0) {
         RDMA_ERROR("ModifyQpToRTS failed");

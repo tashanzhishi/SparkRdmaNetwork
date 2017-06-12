@@ -151,16 +151,17 @@ void test_lock() {
     cout << kv.first << " " << kv.second << endl;
   }
 }
-
+*/
 #include <atomic>
 #include <thread>
+#include <cstdint>
 using namespace std;
-atomic_int add(0);
+atomic_uint add(0);
 void test_atomic_thread_func() {
-  int x = 0, y = 0;
-  for (int i = 0; i < 1000; ++i) {
-    x = static_cast<int>(add);
-    y = atomic_fetch_add(&add, i);
+  uint32_t x = 0, y = 0;
+  for (uint32_t i = 0; i < 1000; ++i) {
+    x = static_cast<uint32_t>(add);
+    y = atomic_fetch_add(&add, (uint32_t)1);
     if (x != y) {
       cout << "hehe" << endl;
     }
@@ -178,7 +179,7 @@ void test_atomic() {
   int x = static_cast<int>(add);
   cout << add << " " << x << endl;
 }
-
+/*
 class tx {
 public:
   tx(){}
@@ -264,6 +265,7 @@ void test_thread() {
   sleep(1);
 }
 
+
 #include <thread>
 #include <functional>
 #include <boost/thread/thread_pool.hpp>
@@ -285,6 +287,7 @@ public:
   static boost::basic_thread_pool pool_;
 };
 boost::basic_thread_pool test::pool_(5);
+
 void test_boost_thread_pool() {
   test x, y;
   x.run();
@@ -362,7 +365,8 @@ void test_class_array() {
     x[i].print();
   }
 }
-*/
+
+
 class hehe {
  public:
   hehe() {
@@ -411,7 +415,9 @@ SingletonClass* SingletonClass::instance = nullptr;
 void test_singleton_class() {
   SingletonClass *instance = SingletonClass::GetClassInstance();
   instance->print();
+  delete instance;
 };
+*/
 
 
 int main(int argc, char *argv[]) {
@@ -422,7 +428,7 @@ int main(int argc, char *argv[]) {
   //test_lock();
   //for (auto &kv : ip2int)
   //  cout << kv.first << " " << kv.second << endl;
-  //test_atomic();
+  test_atomic();
   //test_map();
   //test_vector();
   //test_while();
@@ -432,7 +438,7 @@ int main(int argc, char *argv[]) {
   //test_local_queue();
   //test_boost_lock_free();
   //test_class_array();
-  test_singleton_class();
+  //test_singleton_class();
 
   return 0;
 }

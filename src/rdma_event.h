@@ -14,7 +14,7 @@
 #include <infiniband/verbs.h>
 #include <boost/lockfree/queue.hpp>
 
-#include "rdma_thread.h
+#include "rdma_thread.h"
 #include "rdma_infiniband.h"
 
 namespace SparkRdmaNetwork {
