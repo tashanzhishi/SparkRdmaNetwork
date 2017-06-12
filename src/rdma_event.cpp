@@ -36,7 +36,7 @@ RdmaEvent::RdmaEvent(std::string ip, ibv_comp_channel *recv_cq_channel, QueuePai
 }
 
 RdmaEvent::~RdmaEvent() {
-  //close(kill_fd_);
+  KillPollThread();
 }
 
 int RdmaEvent::EventfdCreate() {
@@ -218,7 +218,7 @@ void RdmaEvent::HandleRecvDataEvent() {
       len = rpc->data_len - sizeof(RdmaDataHeader);
 
       bd->bytes_ = k1KB;
-      if (qp_->PostReceiveOneWithBuffer(bd, BIG_DATA) < 0) {
+      if (qp_->PostReceiveOneWithBuffer(bd, BIG_SIGN) < 0) {
         RDMA_ERROR("post recv with reuse data failed");
         abort();
       }
@@ -234,7 +234,7 @@ void RdmaEvent::HandleRecvDataEvent() {
 
     if (recv_or_free == 1) {
       bd->bytes_ = k1KB;
-      if (qp_->PostReceiveOneWithBuffer(bd, SMALL_DATA) < 0) {
+      if (qp_->PostReceiveOneWithBuffer(bd, SMALL_SIGN) < 0) {
         RDMA_ERROR("post recv with reuse data failed");
         abort();
       }
@@ -296,13 +296,13 @@ void RdmaEvent::HandleReqRpcEvent(BufferDescriptor *bd) {
 
   bd->bytes_ = sizeof(RdmaRpc);
   bd->channel_ = nullptr;
-  if (qp_->PostSendAndWait(bd, 1, BIG_DATA) < 0) {
+  if (qp_->PostSendAndWait(bd, 1, BIG_SIGN) < 0) {
     RDMA_ERROR("PostSendAndWait ack rpc failed");
     abort();
   }
 
   bd->bytes_ = k1KB;
-  if (qp_->PostReceiveOneWithBuffer(bd, BIG_DATA) < 0) {
+  if (qp_->PostReceiveOneWithBuffer(bd, BIG_SIGN) < 0) {
     RDMA_ERROR("post recv with reuse data failed");
     abort();
   }
@@ -348,7 +348,7 @@ void RdmaEvent::HandleAckRpcEvent(BufferDescriptor *bd) {
     }
 
     bd->bytes_ = k1KB;
-    if (qp_->PostReceiveOneWithBuffer(bd, BIG_DATA) < 0) {
+    if (qp_->PostReceiveOneWithBuffer(bd, BIG_SIGN) < 0) {
       RDMA_ERROR("post recv with reuse data failed");
       abort();
     }

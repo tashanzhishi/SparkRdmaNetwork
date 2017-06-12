@@ -30,16 +30,13 @@ void RdmaServer::DestroyServer() {
   close(listen_fd);
   delete server_;
 
-  for (auto &kv : RdmaChannel::Ip2Channel) {
-    RdmaChannel *channel = kv.second;
-    delete channel;
-  }
+  RdmaChannel::DestroyAllChannel();
 
   delete RdmaInfiniband::GetRdmaInfiniband();
 }
 
 int RdmaServer::InitServerSocket(const char *host, uint16_t port) {
-  std::string ip = RdmaSocket::GetIpFromHost(host);
+  std::string ip = RdmaSocket::GetIpByHost(host);
   RdmaSocket::GetLocalIp();
 
   server_ = new RdmaSocket(kIsServer, port);

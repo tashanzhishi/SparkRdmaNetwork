@@ -37,19 +37,15 @@ public:
         abort();
       }
     }
-
     ~DeviceList() {
       ibv_free_device_list(devices_);
     }
-
     // the i is 0 usually
     ibv_device *get_device(const int i = 0) {
       return devices_[i];
     }
-
   private:
     ibv_device **const devices_;
-
     // no copy and =
     DeviceList(DeviceList &) = delete;
     DeviceList &operator=(DeviceList &) = delete;
@@ -60,27 +56,22 @@ public:
   public:
     Device() : ctx_(NULL) {
       DeviceList device_list;
-
       auto dev = device_list.get_device();
       if (dev == NULL) {
         RDMA_ERROR("failed to find infiniband device");
         abort();
       }
-
       ctx_ = ibv_open_device(dev);
       if (ctx_ == NULL) {
         RDMA_ERROR("failed to open infiniband device");
         abort();
       }
     }
-
     ~Device() {
       if (ibv_close_device(ctx_) != 0)
         RDMA_ERROR("ibv_close_device error: {}", strerror(errno));
     }
-
     ibv_context *ctx_; // const after construction
-
   private:
     // no copy and =
     Device(Device &) = delete;
@@ -121,6 +112,7 @@ public:
     ibv_mr *mr_;
     RdmaChannel *channel_;
   private:
+    // no copy and =
     BufferDescriptor(BufferDescriptor&) = delete;
     BufferDescriptor&operator=(BufferDescriptor&) = delete;
   };
@@ -153,9 +145,10 @@ public:
               uint32_t max_recv_wr);
     ~QueuePair();
 
-    uint32_t get_init_psn() const;
-    uint32_t get_local_qp_num(bool is_small) const;
-    uint16_t get_local_lid() const;
+    inline uint32_t get_init_psn() const { return init_psn_; };
+    inline uint32_t get_local_qp_num(bool is_small) const { return is_small ? small_qp_->qp_num : big_qp_->qp_num; };
+    inline uint16_t get_local_lid() const { return lid_; };
+
     int ModifyQpToInit();
     int ModifyQpToRTS();
     int ModifyQpToRTR(RdmaConnectionInfo& info);

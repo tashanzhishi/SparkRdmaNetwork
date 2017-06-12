@@ -12,7 +12,7 @@ namespace SparkRdmaNetwork {
 
 std::string RdmaSocket::local_ip_ = kLocalIp;
 
-std::string RdmaSocket::GetIpFromHost(const char *host) {
+std::string RdmaSocket::GetIpByHost(const char *host) {
   {
     ReadLock rd_lock(Host2IpLock);
     if (Host2Ip.find(host) != Host2Ip.end())
@@ -40,7 +40,7 @@ const std::string& RdmaSocket::GetLocalIp() {
       RDMA_ERROR("gethostname error: {}", strerror(errno));
       abort();
     }
-    local_ip_ = GetIpFromHost(host_name);
+    local_ip_ = GetIpByHost(host_name);
   }
   return local_ip_;
 };

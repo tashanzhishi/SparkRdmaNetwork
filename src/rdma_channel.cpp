@@ -18,7 +18,7 @@ namespace SparkRdmaNetwork {
 
 RdmaChannel* RdmaChannel::GetChannelByIp(const std::string &ip) {
   {
-    ReadLock(Ip2ChannelLock);
+    ReadLock rd_lock(Ip2ChannelLock);
     if (Ip2Channel.find(ip) != Ip2Channel.end())
       return Ip2Channel.at(ip);
   }
@@ -31,6 +31,14 @@ RdmaChannel* RdmaChannel::GetChannelByIp(const std::string &ip) {
   return channel;
 }
 
+void RdmaChannel::DestroyAllChannel() {
+  WriteLock wr_lock(Ip2ChannelLock);
+  for (auto &kv : Ip2Channel) {
+    RdmaChannel *channel = kv.second;
+    delete channel;
+  }
+}
+
 RdmaChannel::RdmaChannel(const char *host, uint16_t port) :
     ip_(""), port_(kDefaultPort), cq_(nullptr), qp_(nullptr), data_id_(0), is_ready_(0), event_(nullptr) {
 
@@ -38,6 +46,7 @@ RdmaChannel::RdmaChannel(const char *host, uint16_t port) :
 
 RdmaChannel::~RdmaChannel() {
   RDMA_TRACE("destruct RdmaChannel");
+  delete event_;
   delete cq_;
   delete qp_;
 }
@@ -47,7 +56,7 @@ int RdmaChannel::Init(const char *c_host, uint16_t port) {
   RDMA_TRACE("init channel to {}", c_host);
 
   port_ = port;
-  ip_ = RdmaSocket::GetIpFromHost(c_host);
+  ip_ = RdmaSocket::GetIpByHost(c_host);
 
   std::shared_ptr<RdmaSocket> socket = new RdmaSocket(ip_, port_);
   socket->Socket();
@@ -165,15 +174,10 @@ int RdmaChannel::InitChannel(std::shared_ptr<RdmaSocket> socket, bool is_accept)
   }
 
   int fd = cq_->get_recv_cq_channel()->fd;
-  if (Fd2Channel.find(fd) == Fd2Channel.end()) {
-    WriteLock(Fd2ChannelLock);
-    if (Fd2Channel.find(fd) == Fd2Channel.end())
-      Fd2Channel[fd] = this;
-  }
 
   RdmaConnectionInfo local_info, remote_info;
-  local_info.small_qpn = qp_->get_local_qp_num(1);
-  local_info.big_qpn = qp_->get_local_qp_num(0);
+  local_info.small_qpn = qp_->get_local_qp_num(SMALL_SIGN);
+  local_info.big_qpn = qp_->get_local_qp_num(BIG_SIGN);
   local_info.psn = qp_->get_init_psn();
   local_info.lid = qp_->get_local_lid();
 

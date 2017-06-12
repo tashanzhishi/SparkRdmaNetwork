@@ -29,7 +29,7 @@ const std::string kLocalIp("localhost_");
 
 class RdmaSocket {
 public:
-  static std::string GetIpFromHost(const char *host);
+  static std::string GetIpByHost(const char *host);
   static const std::string& GetLocalIp();
 
   RdmaSocket(const std::string ip = kIsServer, const uint16_t port = kDefaultPort);

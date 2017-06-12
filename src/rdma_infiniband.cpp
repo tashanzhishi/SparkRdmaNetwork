@@ -91,18 +91,6 @@ RdmaInfiniband::QueuePair::~QueuePair() {
   ibv_destroy_qp(big_qp_);
 }
 
-uint32_t RdmaInfiniband::QueuePair::get_init_psn() const {
-  return init_psn_;
-}
-
-uint32_t RdmaInfiniband::QueuePair::get_local_qp_num(bool is_small) const {
-  return is_small ? small_qp_->qp_num : big_qp_->qp_num;
-}
-
-uint16_t RdmaInfiniband::QueuePair::get_local_lid() const {
-  return lid_;
-}
-
 int RdmaInfiniband::QueuePair::ModifyQpToInit() {
   ibv_qp_attr init_attr;
   memset(&init_attr, 0, sizeof(init_attr));
@@ -227,11 +215,11 @@ int RdmaInfiniband::QueuePair::PostReceiveWithNum(RdmaChannel *channel, bool is_
 }
 
 void RdmaInfiniband::QueuePair::PreReceive(RdmaChannel *channel, int small, int big) {
-  if (PostReceiveWithNum(channel, SMALL_DATA, small) < 0) {
+  if (PostReceiveWithNum(channel, SMALL_SIGN, small) < 0) {
     RDMA_ERROR("PreReceive small qp failed");
     abort();
   }
-  if (PostReceiveWithNum(channel, BIG_DATA, big) < 0) {
+  if (PostReceiveWithNum(channel, BIG_SIGN, big) < 0) {
     RDMA_ERROR("PreReceive big qp failed");
     abort();
   }

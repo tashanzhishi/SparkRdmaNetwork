@@ -244,7 +244,7 @@ void test_function() {
     func_qee.pop();
   }
 }
-*/
+
 #include <thread>
 #include <functional>
 class test{
@@ -263,7 +263,7 @@ void test_thread() {
   test t;
   sleep(1);
 }
-/*
+
 #include <thread>
 #include <functional>
 #include <boost/thread/thread_pool.hpp>
@@ -363,6 +363,55 @@ void test_class_array() {
   }
 }
 */
+class hehe {
+ public:
+  hehe() {
+    s = new char[10];
+    strcpy(s, "hello\n");
+  }
+  ~hehe() {delete[] s;}
+  void print() {cout << s << endl;}
+ private:
+  char *s;
+};
+class SingletonClass {
+ public:
+  void print() {
+    cout << a << " " << b <<endl;
+    c.print();
+  }
+  static SingletonClass* GetClassInstance() {
+    if (instance == nullptr) {
+      instance = new SingletonClass();
+    }
+    return instance;
+  }
+ private:
+  class gc {
+   public:
+    ~gc() {
+      if (SingletonClass::instance) {
+        delete SingletonClass::instance;
+      }
+    }
+  };
+  static gc gc_;
+
+  SingletonClass() : a(3),b(4),c() {}
+  ~SingletonClass() {
+    cout << "wang" << endl;
+  }
+
+  static SingletonClass *instance;
+  int a, b;
+  hehe c;
+};
+SingletonClass* SingletonClass::instance = nullptr;
+
+void test_singleton_class() {
+  SingletonClass *instance = SingletonClass::GetClassInstance();
+  instance->print();
+};
 
 
 int main(int argc, char *argv[]) {
@@ -378,13 +427,12 @@ int main(int argc, char *argv[]) {
   //test_vector();
   //test_while();
   //test_function();
-  test_thread();
+  //test_thread();
   //test_boost_thread_pool();
   //test_local_queue();
   //test_boost_lock_free();
   //test_class_array();
-
-
+  test_singleton_class();
 
   return 0;
 }

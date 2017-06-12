@@ -24,11 +24,7 @@ namespace SparkRdmaNetwork {
 class RdmaChannel {
 public:
   static RdmaChannel *GetChannelByIp(const std::string &ip);
-
-  static std::map<std::string, RdmaChannel *> Ip2Channel;
-  static boost::shared_mutex Ip2ChannelLock;
-  static std::map<int, RdmaChannel*> Fd2Channel;
-  static boost::shared_mutex Fd2ChannelLock;
+  static void DestroyAllChannel();
 
   RdmaChannel(const char *host = nullptr, uint16_t port = kDefaultPort);
   ~RdmaChannel();
@@ -48,6 +44,12 @@ public:
   inline std::string get_ip() const { return ip_; }
 
 private:
+  static std::map<std::string, RdmaChannel *> Ip2Channel;
+  static boost::shared_mutex Ip2ChannelLock;
+
+  //static std::map<int, RdmaChannel*> Fd2Channel;
+  //static boost::shared_mutex Fd2ChannelLock;
+
   std::string ip_;
   uint16_t port_;
 
