@@ -11,6 +11,9 @@
 
 namespace SparkRdmaNetwork {
 
+std::mutex RdmaInfiniband::lock_;
+RdmaInfiniband* RdmaInfiniband::infiniband_ = nullptr;
+
 // -------------------
 // - CompletionQueue -
 // -------------------

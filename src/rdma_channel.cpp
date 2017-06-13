@@ -16,6 +16,9 @@
 
 namespace SparkRdmaNetwork {
 
+std::map<std::string, RdmaChannel *> RdmaChannel::Ip2Channel;
+boost::shared_mutex RdmaChannel::Ip2ChannelLock;
+
 RdmaChannel* RdmaChannel::GetChannelByIp(const std::string &ip) {
   {
     ReadLock rd_lock(Ip2ChannelLock);

@@ -11,6 +11,8 @@
 namespace SparkRdmaNetwork {
 
 std::string RdmaSocket::local_ip_ = kLocalIp;
+std::map<std::string, std::string> RdmaSocket::Host2Ip;
+boost::shared_mutex RdmaSocket::Host2IpLock;
 
 std::string RdmaSocket::GetIpByHost(const char *host) {
   {
