@@ -9,6 +9,7 @@
 #include <cstddef>
 
 #include <boost/pool/pool_alloc.hpp>
+#include <boost/thread/shared_mutex.hpp>
 #include <infiniband/verbs.h>
 #include <set>
 #include <utility>
@@ -17,10 +18,18 @@
 
 #include "rdma_logger.h"
 #include "rdma_protocol.h"
+#include "rdma_thread.h"
 
 #define RMALLOC(len) (RdmaMemoryPool::GetMemoryPool()->malloc(len))
 #define RFREE(ptr, len) (RdmaMemoryPool::GetMemoryPool()->free(ptr, len))
 #define GET_MR(ptr) (RdmaMemoryPool::GetMemoryPool()->get_mr_from_addr(ptr))
+#define INIT_MEMORY_POOL() do { \
+    uint8_t *buf = (uint8_t*)RMALLOC(k32B); RFREE(buf, k32B); \
+    buf = (uint8_t*)RMALLOC(k1KB); RFREE(buf, k1KB); \
+    buf = (uint8_t*)RMALLOC(k32KB); RFREE(buf, k32KB); \
+    buf = (uint8_t*)RMALLOC(k1MB); RFREE(buf, k1MB); \
+    buf = (uint8_t*)RMALLOC(k32MB); RFREE(buf, k32MB); \
+  } while (0)
 
 //#define ibv_pd void
 //#define ibv_mr void
@@ -60,8 +69,7 @@ public:
   void *malloc(std::size_t len);
   void free(void *ptr, std::size_t len);
   void destory();
-  ibv_mr* get_mr_from_addr(void * const addr) const;
-  void* get_head_addr(void * const addr) const;
+  ibv_mr* get_mr_from_addr(void * const addr);
 
   // test function
   void print_set();
@@ -76,31 +84,31 @@ private:
     static size_type total_size;
 
     static char *malloc(const size_type bytes) {
-      RDMA_TRACE("register memory {} bytes", bytes);
+      RDMA_INFO("register memory {} bytes", bytes);
       char *addr = static_cast<char *>((std::malloc)(bytes));
-      //ibv_mr *mr = (void*)(total_size++);
       ibv_mr *mr = ibv_reg_mr(memory_pool_->pd_, addr, bytes, kRdmaMemoryFlag);
       if (mr == nullptr) {
         RDMA_ERROR("ibv_reg_mr error");
         abort();
       }
-      // should thread safe
+      RDMA_DEBUG("addr->mr->lkey: {} {} {}", (void*)addr, (void*)mr, mr->lkey);
       {
-        std::lock_guard<std::mutex> lock(memory_pool_->lock_);
-        memory_pool_->addr_set_.insert((void *) addr);
-        memory_pool_->addr2mr_[(void *) addr] = std::pair<std::size_t, ibv_mr *>(bytes, mr);
+        WriteLock lock(memory_pool_->lock_);
+        memory_pool_->addr_set_.insert((void*)addr);
+        memory_pool_->addr2mr_[(void*)addr] = std::pair<std::size_t, ibv_mr*>(bytes, mr);
       }
+      RDMA_INFO("register {} bytes success", bytes);
       return addr;
     }
 
     static void free(char *const block) {
-      RDMA_TRACE("deregister memory");
+      RDMA_INFO("deregister memory");
       if (ibv_dereg_mr(memory_pool_->get_mr_from_addr(block)) != 0) {
         RDMA_ERROR("ibv_dereg_mr error: {}", strerror(errno));
         abort();
       }
       {
-        std::lock_guard<std::mutex> lock(memory_pool_->lock_);
+        WriteLock lock(memory_pool_->lock_);
         if (memory_pool_->addr_set_.find(block) == memory_pool_->addr_set_.end()) {
           RDMA_ERROR("free faild, because the addr not exist in addr_set");
           abort();
@@ -152,7 +160,7 @@ private:
   static RdmaMemoryPool *memory_pool_;
 
   ibv_pd *pd_;
-  std::mutex lock_;
+  boost::shared_mutex lock_;
   // descending sort of set, can use lower_bound to get the head addr who is the last less than addr
   std::set<void*, std::greater<void*>> addr_set_;
   std::map<void*, std::pair<std::size_t, ibv_mr*>> addr2mr_;

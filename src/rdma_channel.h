@@ -46,6 +46,7 @@ public:
 private:
   static std::map<std::string, RdmaChannel *> Ip2Channel;
   static boost::shared_mutex Ip2ChannelLock;
+  static int PutChannelByIp(std::string ip, RdmaChannel *channel);
 
   //static std::map<int, RdmaChannel*> Fd2Channel;
   //static boost::shared_mutex Fd2ChannelLock;

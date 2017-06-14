@@ -16,6 +16,7 @@ int RdmaServer::InitServer(const char *host, uint16_t port) {
   RDMA_INFO("init server");
 
   RdmaInfiniband *infiniband = RdmaInfiniband::GetRdmaInfiniband();
+  INIT_MEMORY_POOL();
   InitServerSocket(host, port);
   return 0;
 }

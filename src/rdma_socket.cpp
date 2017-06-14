@@ -32,6 +32,7 @@ std::string RdmaSocket::GetIpByHost(const char *host) {
   inet_ntop(he->h_addrtype, he->h_addr, ip_str, kIpCharSize);
   std::string ip(ip_str);
   Host2Ip[host] = ip;
+  RDMA_DEBUG("insert Host2Ip[{}] = {}", host, ip_str);
   return ip;
 }
 
@@ -115,7 +116,7 @@ std::shared_ptr<RdmaSocket> RdmaSocket::Accept() {
   char remote_ip[kIpCharSize] = {'\0'};
   memcpy(&client_addr, &addr, sizeof(addr));
   strcpy(remote_ip, inet_ntoa(client_addr.sin_addr));
-  RDMA_DEBUG("accept %s, fd=%d", remote_ip, fd);
+  RDMA_DEBUG("accept {}, fd = {}", remote_ip, fd);
 
   std::shared_ptr<RdmaSocket> client(new RdmaSocket(remote_ip));
   client->socket_fd_ = fd;
@@ -143,6 +144,8 @@ int RdmaSocket::WriteInfo(RdmaConnectionInfo& info) {
     RDMA_ERROR("write infomation to {} failed", ip_);
     return -1;
   }
+  RDMA_DEBUG("write lid:{}, psn:{}, small_qpn:{}, big_qpn:{} to {}",
+             info.lid, info.psn, info.small_qpn, info.big_qpn, ip_);
   return 0;
 }
 
@@ -156,6 +159,8 @@ int RdmaSocket::ReadInfo(RdmaConnectionInfo& info) {
   info.psn = ntohl(tmp.psn);
   info.small_qpn = ntohl(tmp.small_qpn);
   info.big_qpn = ntohl(tmp.big_qpn);
+  RDMA_DEBUG("read lid:{}, psn:{}, small_qpn:{}, big_qpn:{} from {}",
+             info.lid, info.psn, info.small_qpn, info.big_qpn, ip_);
   return 0;
 }
 

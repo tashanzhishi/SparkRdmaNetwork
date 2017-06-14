@@ -3,6 +3,7 @@
 //
 
 #include <infiniband/verbs.h>
+#include <fcntl.h>
 #include "rdma_infiniband.h"
 
 #include "rdma_logger.h"
@@ -18,7 +19,7 @@ RdmaInfiniband* RdmaInfiniband::infiniband_ = nullptr;
 // - CompletionQueue -
 // -------------------
 RdmaInfiniband::CompletionQueue::CompletionQueue(RdmaInfiniband &infiniband, int min_cqe) {
-  RDMA_TRACE("construct CompletionQueue");
+  RDMA_TRACE("create CompletionQueue");
 
   recv_cq_channel_ = ibv_create_comp_channel(infiniband.device_.ctx_);
   GPR_ASSERT(recv_cq_channel_);
@@ -33,6 +34,15 @@ RdmaInfiniband::CompletionQueue::CompletionQueue(RdmaInfiniband &infiniband, int
     RDMA_ERROR("ibv_req_notify_cq error: {}", strerror(errno));
     abort();
   }
+
+  int flags = fcntl(recv_cq_channel_->fd, F_GETFL);
+  if (fcntl(recv_cq_channel_->fd, F_SETFL, flags|O_NONBLOCK) < 0) {
+    RDMA_ERROR("Failed to change file descriptor of Completion Event Channel");
+    abort();
+  }
+  RDMA_DEBUG("recv_cq_channel->fd = {}", recv_cq_channel_->fd);
+
+  RDMA_DEBUG("create send_cq:{}, recv_cq:{}", (void*)send_cq_, (void*)recv_cq_);
 }
 
 RdmaInfiniband::CompletionQueue::~CompletionQueue() {
@@ -60,13 +70,14 @@ RdmaInfiniband::QueuePair::QueuePair(RdmaInfiniband &infiniband, ibv_qp_type qp_
 
   ibv_qp_init_attr init_attr;
   memset(&init_attr, 0, sizeof(init_attr));
-  init_attr.qp_type = qp_type;
+  init_attr.qp_type = IBV_QPT_RC;
   init_attr.sq_sig_all = 1;
   init_attr.send_cq = send_cq;
   init_attr.recv_cq = recv_cq;
+  init_attr.srq = NULL;
   init_attr.cap.max_send_wr = max_send_wr;
   init_attr.cap.max_recv_wr = max_recv_wr;
-  init_attr.cap.max_send_sge = 3;
+  init_attr.cap.max_send_sge = 5;
   init_attr.cap.max_recv_sge = 1;
   init_attr.cap.max_inline_data = 256;
 
@@ -85,6 +96,9 @@ RdmaInfiniband::QueuePair::QueuePair(RdmaInfiniband &infiniband, ibv_qp_type qp_
     abort();
   }
   lid_ = port_attr.lid;
+
+  RDMA_DEBUG("create send_cq:{}, recv_cq:{}, small_qp:{}, big_qp:{}",
+             (void*)send_cq_, (void*)recv_cq_, (void*)small_qp_, (void*)big_qp_);
 }
 
 RdmaInfiniband::QueuePair::~QueuePair() {
@@ -117,7 +131,7 @@ int RdmaInfiniband::QueuePair::ModifyQpToRTS() {
   rts_attr.timeout  = 0x14;
   rts_attr.retry_cnt = 0x07;
   rts_attr.rnr_retry = 0x07;
-  rts_attr.max_rd_atomic = 0; // rc must add it
+  rts_attr.max_rd_atomic = 1; // rc must add it
   rts_attr.sq_psn   = init_psn_;
 
   int rts_flags = IBV_QP_STATE | IBV_QP_SQ_PSN | IBV_QP_TIMEOUT | IBV_QP_RETRY_CNT | IBV_QP_RNR_RETRY | IBV_QP_MAX_QP_RD_ATOMIC;
@@ -126,6 +140,7 @@ int RdmaInfiniband::QueuePair::ModifyQpToRTS() {
     RDMA_ERROR("modify QP to RTS error, {}", strerror(errno));
     return -1;
   }
+  RDMA_DEBUG("ModifyQpToRTS success");
   return 0;
 }
 
@@ -135,7 +150,7 @@ int RdmaInfiniband::QueuePair::ModifyQpToRTR(RdmaConnectionInfo &info) {
   rtr_attr.qp_state = IBV_QPS_RTR;
   rtr_attr.path_mtu = IBV_MTU_4096;
   rtr_attr.min_rnr_timer = 0x14;
-  rtr_attr.max_dest_rd_atomic = 0; // rc must add it
+  rtr_attr.max_dest_rd_atomic = 1; // rc must add it
   rtr_attr.dest_qp_num = info.small_qpn;
   rtr_attr.rq_psn = info.psn;
   rtr_attr.ah_attr.is_global = 0;
@@ -155,6 +170,7 @@ int RdmaInfiniband::QueuePair::ModifyQpToRTR(RdmaConnectionInfo &info) {
     RDMA_ERROR("modify QP to RTS error, {}", strerror(errno));
     return -1;
   }
+  RDMA_DEBUG("ModifyQpToRTR success");
   return 0;
 }
 
@@ -172,7 +188,7 @@ int RdmaInfiniband::QueuePair::PostReceiveOneWithBuffer(BufferDescriptor *buffer
   recv_wr.num_sge = 1;
   recv_wr.next = NULL;
 
-  ibv_recv_wr *bad = nullptr;
+  ibv_recv_wr *bad = NULL;
   if (ibv_post_recv(is_small ? small_qp_ : big_qp_, &recv_wr, &bad) < 0) {
     RDMA_ERROR("ibv_post_recv error, {}", strerror(errno));
     return -1;
@@ -183,7 +199,6 @@ int RdmaInfiniband::QueuePair::PostReceiveOneWithBuffer(BufferDescriptor *buffer
 int RdmaInfiniband::QueuePair::PostReceiveWithNum(void *channel, bool is_small, int num) {
   ibv_sge *sge = new ibv_sge[num];
   ibv_recv_wr *recv_wr = new ibv_recv_wr[num];
-  ibv_recv_wr *bad = new ibv_recv_wr[num];
 
   for (int i = 0; i < num; ++i) {
     BufferDescriptor *buffer = new BufferDescriptor();
@@ -199,9 +214,10 @@ int RdmaInfiniband::QueuePair::PostReceiveWithNum(void *channel, bool is_small, 
     recv_wr[i].wr_id = (uint64_t)buffer;
     recv_wr[i].sg_list = &sge[i];
     recv_wr[i].num_sge = 1;
-    recv_wr[i].next = nullptr;
+    recv_wr[i].next = NULL;
   }
 
+  ibv_recv_wr *bad = NULL;
   for (int i = 0; i < num; ++i) {
     if (ibv_post_recv(is_small ? small_qp_ : big_qp_, &recv_wr[i], &bad) < 0) {
       RDMA_ERROR("ibv_post_recv error, {}", strerror(errno));
@@ -211,7 +227,6 @@ int RdmaInfiniband::QueuePair::PostReceiveWithNum(void *channel, bool is_small, 
 
   delete[] sge;
   delete[] recv_wr;
-  delete[] bad;
 
   return 0;
 }
@@ -225,6 +240,7 @@ void RdmaInfiniband::QueuePair::PreReceive(void *channel, int small, int big) {
     RDMA_ERROR("PreReceive big qp failed");
     abort();
   }
+  RDMA_DEBUG("PreReceive {} {}", small, big);
 }
 
 int RdmaInfiniband::QueuePair::PostSendAndWait(BufferDescriptor *buf, int num, bool is_small) {
@@ -233,30 +249,42 @@ int RdmaInfiniband::QueuePair::PostSendAndWait(BufferDescriptor *buf, int num, b
     sge[i].addr = (uint64_t)buf[i].buffer_;
     sge[i].length = buf[i].bytes_;
     sge[i].lkey = buf[i].mr_->lkey;
+    RDMA_DEBUG("send buffer (addr, bytes, lkey) {} {} {}", (void*)buf[i].buffer_, buf[i].bytes_, buf[i].mr_->lkey);
   }
   ibv_send_wr send_wr;
   memset(&send_wr, 0, sizeof(send_wr));
-  send_wr.wr_id = 0;
-  send_wr.sg_list = sge;
+  send_wr.wr_id = (uint64_t)buf;
+  send_wr.sg_list = &sge[0];
   send_wr.num_sge = num;
   send_wr.opcode = IBV_WR_SEND;
   send_wr.send_flags = IBV_SEND_SIGNALED;
 
-  ibv_send_wr *bad;
+  RDMA_DEBUG("PostSendAndWait send_cq:{}, recv_cq:{}, small_qp:{}, big_qp:{}",
+             (void*)send_cq_, (void*)recv_cq_, (void*)small_qp_, (void*)big_qp_);
+  RDMA_DEBUG("PostSendAndWait {} begin", is_small?"samll":"big");
+  ibv_send_wr *bad = NULL;
   {
     std::lock_guard<std::mutex> lock(send_lock);
-    if (ibv_post_send(is_small ? small_qp_ : big_qp_, &send_wr, &bad) < 0) {
+    if (ibv_post_send(is_small?small_qp_:big_qp_, &send_wr, &bad) < 0) {
      RDMA_ERROR("ibv_post_send error, {}", strerror(errno));
       return -1;
     }
+
     ibv_wc wc;
-    while (ibv_poll_cq(send_cq_, 1, &wc) < 1)
-      ;
+    int event_num;
+    do {
+      event_num = ibv_poll_cq(send_cq_, 1, &wc);
+    } while (event_num == 0);
+    if (event_num < 0) {
+      RDMA_ERROR("ibv_poll_cq error, {}", strerror(errno));
+      return -1;
+    }
     if (wc.status != IBV_WC_SUCCESS) {
       RDMA_ERROR("ibv_poll_cq error: {}", WcStatusToString(wc.status));
       return -1;
     }
   }
+  RDMA_DEBUG("PostSendAndWait end");
   return 0;
 }
 
@@ -285,8 +313,7 @@ int RdmaInfiniband::QueuePair::PostWriteAndWait(BufferDescriptor *buf, int num, 
       return -1;
     }
     ibv_wc wc;
-    while (ibv_poll_cq(send_cq_, 1, &wc) < 1)
-      ;
+    while (ibv_poll_cq(send_cq_, 1, &wc) < 1) {}
     if (wc.status != IBV_WC_SUCCESS) {
       RDMA_ERROR("ibv_poll_cq error: {}", WcStatusToString(wc.status));
       return -1;

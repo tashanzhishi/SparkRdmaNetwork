@@ -65,6 +65,11 @@ public:
         RDMA_ERROR("failed to open infiniband device");
         abort();
       }
+      // wyb test
+      ibv_device_attr da;
+      ibv_query_device(ctx_, &da);
+      RDMA_INFO("max_qp: {}, max_qp_wr: {}, max_sge: {}, max_cq: {}, max_cqe: {}",
+                da.max_qp, da.max_qp_wr, da.max_sge, da.max_cq, da.max_cqe);
     }
     ~Device() {
       if (ibv_close_device(ctx_) != 0)

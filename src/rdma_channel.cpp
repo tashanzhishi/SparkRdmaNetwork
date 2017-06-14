@@ -19,19 +19,31 @@ namespace SparkRdmaNetwork {
 std::map<std::string, RdmaChannel *> RdmaChannel::Ip2Channel;
 boost::shared_mutex RdmaChannel::Ip2ChannelLock;
 
+int RdmaChannel::PutChannelByIp(std::string ip, RdmaChannel *channel) {
+  WriteLock wr_lock(Ip2ChannelLock);
+  if (Ip2Channel.find(ip) != Ip2Channel.end()) {
+    RDMA_ERROR("Ip2Channel[{}] = {} is existing", ip, (void*)Ip2Channel.at(ip));
+    return 0;
+  }
+  Ip2Channel[ip] = channel;
+  RDMA_DEBUG("insert Ip2Channel[{}] = {}", ip, (void*)channel);
+  return 1;
+}
+
 RdmaChannel* RdmaChannel::GetChannelByIp(const std::string &ip) {
   {
     ReadLock rd_lock(Ip2ChannelLock);
     if (Ip2Channel.find(ip) != Ip2Channel.end())
       return Ip2Channel.at(ip);
   }
-  WriteLock wr_lock(Ip2ChannelLock);
-  if (Ip2Channel.find(ip) != Ip2Channel.end())
+  RDMA_DEBUG("Ip2Channel no {}, so create it", ip);
+  RdmaChannel *channel = new RdmaChannel(ip.c_str());
+  if (PutChannelByIp(ip, channel) == 1) {
+    return channel;
+  } else {
+    ReadLock rd_lock(Ip2ChannelLock);
     return Ip2Channel.at(ip);
-  RdmaChannel *channel = new RdmaChannel();
-  Ip2Channel[ip] = channel;
-  RDMA_DEBUG("insert a RdmaChannel to map, {}", ip);
-  return channel;
+  }
 }
 
 void RdmaChannel::DestroyAllChannel() {
@@ -44,7 +56,9 @@ void RdmaChannel::DestroyAllChannel() {
 
 RdmaChannel::RdmaChannel(const char *host, uint16_t port) :
     ip_(""), port_(kDefaultPort), cq_(nullptr), qp_(nullptr), event_(nullptr), is_ready_(0), data_id_(0) {
-
+  ip_ = RdmaSocket::GetIpByHost(host);
+  port_ = port;
+  PutChannelByIp(ip_, this);
 }
 
 RdmaChannel::~RdmaChannel() {
@@ -176,7 +190,7 @@ int RdmaChannel::InitChannel(std::shared_ptr<RdmaSocket> socket, bool is_accept)
     }
   }
 
-  int fd = cq_->get_recv_cq_channel()->fd;
+  //int fd = cq_->get_recv_cq_channel()->fd;
 
   RdmaConnectionInfo local_info, remote_info;
   local_info.small_qpn = qp_->get_local_qp_num(SMALL_SIGN);
@@ -195,12 +209,12 @@ int RdmaChannel::InitChannel(std::shared_ptr<RdmaSocket> socket, bool is_accept)
   {
     std::lock_guard<std::mutex> lock(channel_lock_);
     if (is_ready_ == 0) {
-      if (qp_->ModifyQpToRTS() < 0) {
-        RDMA_ERROR("ModifyQpToRTS failed");
-        abort();
-      }
       if (qp_->ModifyQpToRTR(remote_info) < 0) {
         RDMA_ERROR("ModifyQpToRTR failed");
+        abort();
+      }
+      if (qp_->ModifyQpToRTS() < 0) {
+        RDMA_ERROR("ModifyQpToRTS failed");
         abort();
       }
       is_ready_ = 1;

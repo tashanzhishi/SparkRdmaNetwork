@@ -20,7 +20,7 @@ namespace SparkRdmaNetwork {
 
 boost::basic_thread_pool RdmaEvent::thread_pool_(20);
 
-RdmaEvent::RdmaEvent(std::string ip, ibv_comp_channel *recv_cq_channel, QueuePair *qp) {
+RdmaEvent::RdmaEvent(std::string ip, ibv_comp_channel *recv_cq_channel, QueuePair *qp) : send_data_(1024) {
   kill_fd_ = EventfdCreate();
   if (kill_fd_ < 0) {
     RDMA_ERROR("create wakeup_fd failed");
@@ -33,6 +33,7 @@ RdmaEvent::RdmaEvent(std::string ip, ibv_comp_channel *recv_cq_channel, QueuePai
 
   PollFunction poll_func = std::bind(&RdmaEvent::PollThreadFunc, this);
   thread_pool_.submit(poll_func);
+  RDMA_INFO("create RdmaEvent for {}", ip_);
 }
 
 RdmaEvent::~RdmaEvent() {
@@ -79,6 +80,7 @@ int RdmaEvent::KillPollThread() {
 }
 
 void RdmaEvent::PollThreadFunc() {
+  RDMA_INFO("poll thread for {} start", ip_);
   while (1) {
     int ret = Poll(500);
     if (ret == 1) {
@@ -228,9 +230,10 @@ void RdmaEvent::HandleRecvDataEvent() {
       abort();
     }
 
-    jbyteArray jba = jni_alloc_byte_array(len);
+    /*jbyteArray jba = jni_alloc_byte_array(len);
     set_byte_array_region(jba, start, len, copy_buff);
-    jni_channel_callback(ip_.c_str(), jba, len);
+    jni_channel_callback(ip_.c_str(), jba, len);*/
+    RDMA_INFO("recv buffer {}: {}", (char*)copy_buff, len);
 
     if (recv_or_free == 1) {
       bd->bytes_ = k1KB;

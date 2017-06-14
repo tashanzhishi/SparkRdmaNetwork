@@ -109,17 +109,15 @@ void test_string() {
   string s3(nullptr);
   cout << s3 << endl;
 }
-*/
+
 
 #include <mutex>
-
 class hehe {
  public:
   static mutex lock_;
   int a;
 };
 mutex hehe::lock_;
-
 void test_lock() {
   hehe x;
   {
@@ -131,12 +129,28 @@ void test_lock() {
   hehe::lock_.unlock();
   cout << x.a << endl;
 }
-/*
+
+
 #include <thread>
 #include <boost/thread.hpp>
 #include <boost/thread/shared_mutex.hpp>
 typedef boost::shared_lock<boost::shared_mutex> ReadLock;
 typedef boost::unique_lock<boost::shared_mutex> WriteLock;
+class hehe {
+ public:
+  hehe(){}
+  boost::shared_mutex lock_;
+  void trylock() const {
+    ReadLock rdlock(lock_);
+    int a = 1;
+    a++;
+  }
+};
+void test_class_lock() {
+  hehe x;
+  x.trylock();
+}
+
 boost::shared_mutex rw_mutex;
 map<int, int> sh;
 int a;
@@ -334,7 +348,7 @@ void test_local_queue() {
   sleep(1);
   x.join();
 }
-
+*/
 
 #include <boost/lockfree/queue.hpp>
 #include <boost/thread/thread_pool.hpp>
@@ -373,6 +387,7 @@ void test_boost_lock_free() {
   cout << "all end" << endl;
 }
 
+/*
 struct arr {
   int a;
   void print() {cout << a << endl;}
@@ -447,8 +462,9 @@ int main(int argc, char *argv[]) {
   //test2();
   //test3();
   //test_string();
-  test_lock();
+  //test_lock();
   //test_rw_lock();
+  //test_class_lock();
   //for (auto &kv : ip2int)
   //  cout << kv.first << " " << kv.second << endl;
   //test_atomic();
@@ -459,7 +475,7 @@ int main(int argc, char *argv[]) {
   //test_thread();
   //test_boost_thread_pool();
   //test_local_queue();
-  //test_boost_lock_free();
+  test_boost_lock_free();
   //test_class_array();
   //test_singleton_class();
 

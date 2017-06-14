@@ -12,19 +12,24 @@ using namespace std;
 RdmaServer *server = nullptr;
 uint16_t port = 12347;
 char localhost[] = "127.0.0.1";
-char head1[7]={"head1\n"}, head2[7]={"head2\n"}, head3[7]={"head3\n"}, head4[7]={"head4\n"}, head7[7]={"head7\n"};
-char msg1[32-9]={"msg1\n"}, msg2[1024-9-7]={"msg2\n"};// msg3[1024*4]={"msg3=4KB\n"}, msg4[1024*1024*1]={"msg4=1MB\n"}, msg5[1024*1024*64]={"msg7=64MB\n"};
 
 void init() {
   server = new RdmaServer();
   server->InitServer(localhost, port);
+  sleep(1);
 }
 
 void test_send_msg(const char *host) {
   std::string ip = RdmaSocket::GetIpByHost(host);
-  RdmaChannel *channel = RdmaChannel::GetChannelByIp(ip);
+  RDMA_INFO("send to {}", ip);
+  RdmaChannel *channel = new RdmaChannel(host, port);
+  RDMA_INFO("create RdmaChannel success");
   channel->Init(host, port);
-  channel->SendMsg(host, port, (uint8_t*)msg1, sizeof(msg1));
+  RDMA_INFO("init channel success");
+  int msg1_len = 32 - 9;
+  char *msg1 = (char*)RMALLOC(msg1_len);
+  strcpy(msg1, "msg1\n");
+  channel->SendMsg(host, port, (uint8_t*)msg1, msg1_len);
   sleep(1);
   channel->DestroyAllChannel();
 }
