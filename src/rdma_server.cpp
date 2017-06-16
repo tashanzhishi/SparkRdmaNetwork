@@ -56,6 +56,9 @@ void RdmaServer::AcceptThreadFunc(const char *host, uint16_t port) {
     if (client == nullptr)
       return;
     RdmaChannel *channel = RdmaChannel::GetChannelByIp(client->get_ip());
+    if (channel == nullptr) {
+      channel = new RdmaChannel(client->get_ip().c_str());
+    }
     channel->InitChannel(client, true);
   }
 }

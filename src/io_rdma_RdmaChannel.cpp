@@ -22,6 +22,9 @@ JNIEXPORT void JNICALL Java_io_rdma_RdmaChannel_init
   int port = jport;
   std::string ip = RdmaSocket::GetIpByHost(host);
   RdmaChannel *channel = RdmaChannel::GetChannelByIp(ip);
+  if (channel == nullptr) {
+    channel = new RdmaChannel(host, port);
+  }
   channel->Init(host, port);
 }
 
@@ -36,6 +39,7 @@ JNIEXPORT void JNICALL Java_io_rdma_RdmaChannel_sendHeader
   int port = jport;
   std::string ip = RdmaSocket::GetIpByHost(host);
   RdmaChannel *channel = RdmaChannel::GetChannelByIp(ip);
+  GPR_ASSERT(channel!= nullptr);
 
   jclass ByteBuffer = env->FindClass("java/nio/ByteBuffer");
   if (ByteBuffer == nullptr) {
@@ -93,6 +97,7 @@ JNIEXPORT void JNICALL Java_io_rdma_RdmaChannel_sendHeaderWithBody
   int port = jport;
   std::string ip = RdmaSocket::GetIpByHost(host);
   RdmaChannel *channel = RdmaChannel::GetChannelByIp(ip);
+  GPR_ASSERT(channel!= nullptr);
 
   jclass ByteBuffer = env->FindClass("java/nio/ByteBuffer");
   if (ByteBuffer == nullptr) {

@@ -33,16 +33,11 @@ int RdmaChannel::PutChannelByIp(std::string ip, RdmaChannel *channel) {
 RdmaChannel* RdmaChannel::GetChannelByIp(const std::string &ip) {
   {
     ReadLock rd_lock(Ip2ChannelLock);
-    if (Ip2Channel.find(ip) != Ip2Channel.end())
+    if (Ip2Channel.find(ip) != Ip2Channel.end()) {
       return Ip2Channel.at(ip);
-  }
-  RDMA_DEBUG("Ip2Channel no {}, so create it", ip);
-  RdmaChannel *channel = new RdmaChannel(ip.c_str());
-  if (PutChannelByIp(ip, channel) == 1) {
-    return channel;
-  } else {
-    ReadLock rd_lock(Ip2ChannelLock);
-    return Ip2Channel.at(ip);
+    } else {
+      return nullptr;
+    }
   }
 }
 
@@ -54,15 +49,16 @@ void RdmaChannel::DestroyAllChannel() {
   }
 }
 
+// RdmaChannel must be create once between two machine
 RdmaChannel::RdmaChannel(const char *host, uint16_t port) :
     ip_(""), port_(kDefaultPort), cq_(nullptr), qp_(nullptr), event_(nullptr), is_ready_(0), data_id_(0) {
   ip_ = RdmaSocket::GetIpByHost(host);
   port_ = port;
-  PutChannelByIp(ip_, this);
+  PutChannelByIp(ip_, this);// may have bug
 }
 
 RdmaChannel::~RdmaChannel() {
-  RDMA_TRACE("destruct RdmaChannel");
+  RDMA_INFO("destruct RdmaChannel");
   delete event_;
   delete cq_;
   delete qp_;
@@ -70,7 +66,7 @@ RdmaChannel::~RdmaChannel() {
 
 // when client call init, this mean client will create channel
 int RdmaChannel::Init(const char *c_host, uint16_t port) {
-  RDMA_TRACE("init channel to {}", c_host);
+  RDMA_DEBUG("init channel to {}", c_host);
 
   port_ = port;
   ip_ = RdmaSocket::GetIpByHost(c_host);
@@ -87,7 +83,7 @@ int RdmaChannel::Init(const char *c_host, uint16_t port) {
 }
 
 int RdmaChannel::SendMsg(const char *host, uint16_t port, uint8_t *msg, uint32_t len) {
-  RDMA_TRACE("send msg {}:{}", host, len);
+  RDMA_DEBUG("SendMsg {}:{}", host, len);
   uint32_t data_id = std::atomic_fetch_add(&data_id_, (uint32_t)1);
   data_id += 1;
   uint32_t data_len = len + sizeof(RdmaDataHeader);
@@ -134,8 +130,9 @@ int RdmaChannel::SendMsgWithHeader(const char *host, uint16_t port, uint8_t *hea
   uint32_t data_len = sizeof(RdmaDataHeader) + header_len + body_len;
   uint32_t data_id = std::atomic_fetch_add(&data_id_, (uint32_t)1);
   data_id += 1;
+  RDMA_DEBUG("SendMsgWithHeader {}:{}", host, data_len);
 
-  RdmaDataHeader *rdma_header = (RdmaDataHeader*)header;
+  RdmaDataHeader *rdma_header = (RdmaDataHeader *)RMALLOC(sizeof(RdmaDataHeader));
   memset(rdma_header, 0, sizeof(RdmaDataHeader));
   rdma_header->data_id = data_id;
   rdma_header->data_len = data_len;
@@ -177,7 +174,7 @@ int RdmaChannel::SendMsgWithHeader(const char *host, uint16_t port, uint8_t *hea
 }
 
 int RdmaChannel::InitChannel(std::shared_ptr<RdmaSocket> socket, bool is_accept) {
-  RDMA_TRACE("start create cq qp etc.");
+  RDMA_DEBUG("start create cq qp event etc...");
   RdmaInfiniband *infiniband = RdmaInfiniband::GetRdmaInfiniband();
 
   {

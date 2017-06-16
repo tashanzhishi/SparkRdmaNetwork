@@ -249,7 +249,6 @@ int RdmaInfiniband::QueuePair::PostSendAndWait(BufferDescriptor *buf, int num, b
     sge[i].addr = (uint64_t)buf[i].buffer_;
     sge[i].length = buf[i].bytes_;
     sge[i].lkey = buf[i].mr_->lkey;
-    RDMA_DEBUG("send buffer (addr, bytes, lkey) {} {} {}", (void*)buf[i].buffer_, buf[i].bytes_, buf[i].mr_->lkey);
   }
   ibv_send_wr send_wr;
   memset(&send_wr, 0, sizeof(send_wr));
@@ -259,9 +258,7 @@ int RdmaInfiniband::QueuePair::PostSendAndWait(BufferDescriptor *buf, int num, b
   send_wr.opcode = IBV_WR_SEND;
   send_wr.send_flags = IBV_SEND_SIGNALED;
 
-  RDMA_DEBUG("PostSendAndWait send_cq:{}, recv_cq:{}, small_qp:{}, big_qp:{}",
-             (void*)send_cq_, (void*)recv_cq_, (void*)small_qp_, (void*)big_qp_);
-  RDMA_DEBUG("PostSendAndWait {} begin", is_small?"samll":"big");
+  RDMA_TRACE("PostSendAndWait {} begin", is_small?"samll":"big");
   ibv_send_wr *bad = NULL;
   {
     std::lock_guard<std::mutex> lock(send_lock);
@@ -284,7 +281,7 @@ int RdmaInfiniband::QueuePair::PostSendAndWait(BufferDescriptor *buf, int num, b
       return -1;
     }
   }
-  RDMA_DEBUG("PostSendAndWait end");
+  RDMA_TRACE("PostSendAndWait end");
   return 0;
 }
 
@@ -313,7 +310,14 @@ int RdmaInfiniband::QueuePair::PostWriteAndWait(BufferDescriptor *buf, int num, 
       return -1;
     }
     ibv_wc wc;
-    while (ibv_poll_cq(send_cq_, 1, &wc) < 1) {}
+    int event_num;
+    do {
+      event_num = ibv_poll_cq(send_cq_, 1, &wc);
+    } while (event_num == 0);
+    if (event_num < 0) {
+      RDMA_ERROR("ibv_poll_cq error, {}", strerror(errno));
+      return -1;
+    }
     if (wc.status != IBV_WC_SUCCESS) {
       RDMA_ERROR("ibv_poll_cq error: {}", WcStatusToString(wc.status));
       return -1;

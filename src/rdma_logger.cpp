@@ -21,7 +21,7 @@ namespace SparkRdmaNetwork {
     if (rdma_logger_.get() == nullptr) {
       std::lock_guard<std::mutex> lock(lock_);
       if (rdma_logger_.get() == nullptr) {
-        new RdmaLogger(spdlog::level::trace);
+        new RdmaLogger(spdlog::level::debug);
       }
     }
     return rdma_logger_;
