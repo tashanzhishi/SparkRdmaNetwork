@@ -13,7 +13,10 @@
 namespace SparkRdmaNetwork {
 
 int RdmaServer::InitServer(const char *host, uint16_t port) {
-  RDMA_INFO("init server");
+  if (port == 0) {
+    port = kDefaultPort;
+  }
+  RDMA_INFO("init server {}:{}", host, port);
 
   RdmaInfiniband *infiniband = RdmaInfiniband::GetRdmaInfiniband();
   INIT_MEMORY_POOL();

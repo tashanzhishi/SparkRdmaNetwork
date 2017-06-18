@@ -10,7 +10,7 @@
 
 namespace SparkRdmaNetwork {
 
-const uint16_t kDefaultPort = 6789;
+const uint16_t kDefaultPort = 6666;
 
 struct RdmaConnectionInfo {
   uint16_t lid;

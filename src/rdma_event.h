@@ -70,6 +70,8 @@ private:
   RdmaEvent &operator=(RdmaEvent &) = delete;
 };
 
+int test_print(uint8_t *out, int len, char *mark);
+
 } // namespace SparkRdmaNetwork
 
 #endif //SPARKRDMA_RDMA_EVENT_LOOP_H

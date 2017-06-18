@@ -39,7 +39,7 @@ JNIEXPORT void JNICALL Java_io_rdma_RdmaChannel_sendHeader
   int port = jport;
   std::string ip = RdmaSocket::GetIpByHost(host);
   RdmaChannel *channel = RdmaChannel::GetChannelByIp(ip);
-  GPR_ASSERT(channel!= nullptr);
+  GPR_ASSERT(channel != nullptr);
 
   jclass ByteBuffer = env->FindClass("java/nio/ByteBuffer");
   if (ByteBuffer == nullptr) {
@@ -71,17 +71,23 @@ JNIEXPORT void JNICALL Java_io_rdma_RdmaChannel_sendHeader
       return;
     }
     int pos = env->CallIntMethod(jmsg, position);
-    RDMA_DEBUG("position = {}", pos);
+    RDMA_TRACE("position = {}", pos);
 
     rdma_msg = (uint8_t*)RMALLOC(len);
     // copy data from java to rdma
     env->GetByteArrayRegion(byte_array, pos, len, (jbyte*)rdma_msg);
   } else {
     // msg is DirectBuffer, but now copy it still
+    RDMA_DEBUG("msg is direct buffer");
     rdma_msg = (uint8_t*)RMALLOC(len);
     memcpy(rdma_msg, msg, len);
-    free(msg);
   }
+
+  // wyb test
+  //char m[] = "msg: ";
+  //test_print(rdma_msg, len, m);
+  // wyb test
+
   channel->SendMsg(host, port, rdma_msg, len);
 }
 
@@ -97,7 +103,7 @@ JNIEXPORT void JNICALL Java_io_rdma_RdmaChannel_sendHeaderWithBody
   int port = jport;
   std::string ip = RdmaSocket::GetIpByHost(host);
   RdmaChannel *channel = RdmaChannel::GetChannelByIp(ip);
-  GPR_ASSERT(channel!= nullptr);
+  GPR_ASSERT(channel != nullptr);
 
   jclass ByteBuffer = env->FindClass("java/nio/ByteBuffer");
   if (ByteBuffer == nullptr) {
@@ -129,7 +135,7 @@ JNIEXPORT void JNICALL Java_io_rdma_RdmaChannel_sendHeaderWithBody
       return;
     }
     int pos = env->CallIntMethod(jheader, position);
-    RDMA_DEBUG("position = {}", pos);
+    RDMA_TRACE("position = {}", pos);
 
     rdma_header = (uint8_t*)RMALLOC(hlen);
     // copy data from java to rdma
@@ -137,7 +143,6 @@ JNIEXPORT void JNICALL Java_io_rdma_RdmaChannel_sendHeaderWithBody
   } else {
     rdma_header = (uint8_t*)RMALLOC(hlen);
     memcpy(rdma_header, header, hlen);
-    free(header);
   }
 
   uint8_t *body = (uint8_t *)env->GetDirectBufferAddress(jbody);
@@ -148,16 +153,21 @@ JNIEXPORT void JNICALL Java_io_rdma_RdmaChannel_sendHeaderWithBody
       return;
     }
     int pos = env->CallIntMethod(jbody, position);
-    RDMA_DEBUG("position = {}", pos);
+    RDMA_TRACE("position = {}", pos);
 
     rdma_body = (uint8_t*)RMALLOC(blen);
     // copy data from java to rdma
     env->GetByteArrayRegion(byte_array, pos, blen, (jbyte*)rdma_body);
   } else {
     rdma_body = (uint8_t*)RMALLOC(blen);
-    memcpy(rdma_body, body, hlen);
-    free(body);
+    memcpy(rdma_body, body, blen);
   }
+
+  // wyb test
+  //char rh[] = "rdma_head: ", rb[] = "rdma_body: ";
+  //test_print(rdma_header, hlen, rh);
+  //test_print(rdma_body, blen, rb);
+  // wyb test
 
   channel->SendMsgWithHeader(host, port, rdma_header, hlen, rdma_body, blen);
 }

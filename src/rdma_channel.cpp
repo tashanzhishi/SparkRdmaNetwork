@@ -66,7 +66,10 @@ RdmaChannel::~RdmaChannel() {
 
 // when client call init, this mean client will create channel
 int RdmaChannel::Init(const char *c_host, uint16_t port) {
-  RDMA_DEBUG("init channel to {}", c_host);
+  if (port == 0) {
+    port = kDefaultPort;
+  }
+  RDMA_DEBUG("init channel to {}:{}", c_host, port);
 
   port_ = port;
   ip_ = RdmaSocket::GetIpByHost(c_host);
@@ -83,10 +86,13 @@ int RdmaChannel::Init(const char *c_host, uint16_t port) {
 }
 
 int RdmaChannel::SendMsg(const char *host, uint16_t port, uint8_t *msg, uint32_t len) {
-  RDMA_DEBUG("SendMsg {}:{}", host, len);
+  if (port == 0) {
+    port = kDefaultPort;
+  }
   uint32_t data_id = std::atomic_fetch_add(&data_id_, (uint32_t)1);
   data_id += 1;
   uint32_t data_len = len + sizeof(RdmaDataHeader);
+  RDMA_DEBUG("SendMsg {}:{}:{} {}", host, port, data_id, len);
 
   RdmaDataHeader *header = (RdmaDataHeader *)RMALLOC(sizeof(RdmaDataHeader));
   memset(header, 0, sizeof(RdmaDataHeader));
@@ -130,7 +136,10 @@ int RdmaChannel::SendMsgWithHeader(const char *host, uint16_t port, uint8_t *hea
   uint32_t data_len = sizeof(RdmaDataHeader) + header_len + body_len;
   uint32_t data_id = std::atomic_fetch_add(&data_id_, (uint32_t)1);
   data_id += 1;
-  RDMA_DEBUG("SendMsgWithHeader {}:{}", host, data_len);
+  if (port == 0) {
+    port = kDefaultPort;
+  }
+  RDMA_DEBUG("SendMsgWithHeader {}:{}:{} {}:{}", host, port, data_id, header_len, body_len);
 
   RdmaDataHeader *rdma_header = (RdmaDataHeader *)RMALLOC(sizeof(RdmaDataHeader));
   memset(rdma_header, 0, sizeof(RdmaDataHeader));
@@ -174,20 +183,19 @@ int RdmaChannel::SendMsgWithHeader(const char *host, uint16_t port, uint8_t *hea
 }
 
 int RdmaChannel::InitChannel(std::shared_ptr<RdmaSocket> socket, bool is_accept) {
-  RDMA_DEBUG("start create cq qp event etc...");
+  RDMA_DEBUG("start InitChannel of {}", ip_);
   RdmaInfiniband *infiniband = RdmaInfiniband::GetRdmaInfiniband();
 
   {
     std::lock_guard<std::mutex> lock(channel_lock_);
     if (cq_ == nullptr) {
+      RDMA_DEBUG("create cq, qp, event of {}", ip_);
       cq_ = infiniband->CreateCompleteionQueue();
       qp_ = infiniband->CreateQueuePair(cq_);
       qp_->PreReceive(this);
       event_ = new RdmaEvent(ip_, cq_->get_recv_cq_channel(), qp_);
     }
   }
-
-  //int fd = cq_->get_recv_cq_channel()->fd;
 
   RdmaConnectionInfo local_info, remote_info;
   local_info.small_qpn = qp_->get_local_qp_num(SMALL_SIGN);
@@ -206,6 +214,7 @@ int RdmaChannel::InitChannel(std::shared_ptr<RdmaSocket> socket, bool is_accept)
   {
     std::lock_guard<std::mutex> lock(channel_lock_);
     if (is_ready_ == 0) {
+      RDMA_DEBUG("modify qp to rtr and rts of {}", ip_);
       if (qp_->ModifyQpToRTR(remote_info) < 0) {
         RDMA_ERROR("ModifyQpToRTR failed");
         abort();

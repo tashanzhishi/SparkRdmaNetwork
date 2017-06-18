@@ -66,6 +66,7 @@ RdmaSocket::RdmaSocket(const std::string ip, const uint16_t port) {
 }
 
 RdmaSocket::~RdmaSocket() {
+  RDMA_INFO("close socket {}:{}, fd:{}", ip_, port_, socket_fd_);
   close(socket_fd_);
 }
 
@@ -80,7 +81,7 @@ void RdmaSocket::Socket() {
   // server
   if (ip_ == kIsServer) {
     int reuse = 1;
-    if (setsockopt(socket_fd_, SOL_SOCKET, SO_REUSEADDR, (char *)&reuse, sizeof(int)) < 0) {
+    if (setsockopt(socket_fd_, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(int)) < 0) {
       RDMA_ERROR("setsockopt reuse error: {}", strerror(errno));
       abort();
     }
@@ -89,7 +90,7 @@ void RdmaSocket::Socket() {
 }
 
 void RdmaSocket::Bind() {
-  if (bind(socket_fd_, (struct sockaddr*)(&addr_), sizeof(addr_)) != 0) {
+  if (bind(socket_fd_, (struct sockaddr*)(&addr_), sizeof(addr_)) < 0) {
     RDMA_ERROR("bind error: {}", strerror(errno));
     abort();
   }

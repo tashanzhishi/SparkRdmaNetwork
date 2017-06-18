@@ -5,6 +5,7 @@
 #include "rdma_event.h"
 
 #include <cstddef>
+#include <cstring>
 #include <poll.h>
 #include <fcntl.h>
 #include <infiniband/verbs.h>
@@ -160,7 +161,7 @@ int RdmaEvent::Poll(int timeout) {
         bd->bytes_ = wc.byte_len;
         RdmaDataHeader *header = (RdmaDataHeader *) bd->buffer_;
         if (header->data_type == TYPE_SMALL_DATA || header->data_type == TYPE_WRITE_SUCCESS) {
-          RDMA_DEBUG("insert recv_data[{}]", header->data_id);
+          RDMA_DEBUG("insert recv data {}:{}:{}", ip_, header->data_id, header->data_len);
           {
             std::lock_guard<std::mutex> lock(recv_data_lock_);
             recv_data_[header->data_id] = bd;
@@ -202,7 +203,7 @@ int RdmaEvent::Poll(int timeout) {
 
 // recv small data, or big data successed writed
 void RdmaEvent::HandleRecvDataEvent() {
-  RDMA_DEBUG("start a handle recv event thread");
+  RDMA_DEBUG("start a handle recv event thread for {}", ip_);
   while (1) {
     BufferDescriptor *bd = nullptr;
     uint32_t data_id = recv_data_id_;
@@ -216,22 +217,21 @@ void RdmaEvent::HandleRecvDataEvent() {
       bd = recv_data_[data_id];
       recv_data_.erase(data_id);
     }
-    RDMA_DEBUG("handle recv_data[{}]", data_id);
 
     int recv_or_free = 0;
     RdmaDataHeader *header = (RdmaDataHeader *)bd->buffer_;
-    uint8_t *copy_buff = nullptr;
-    int start = 0, len = 0;
+    RDMA_DEBUG("handle recv data {}:{}:{}", ip_, data_id, header->data_len);
+
+    uint8_t *buffer = nullptr;
+    uint32_t data_len = 0;
     if (header->data_type == TYPE_SMALL_DATA) {
-      copy_buff = bd->buffer_;
-      start = sizeof(RdmaDataHeader);
-      len = header->data_len - sizeof(RdmaDataHeader);
+      buffer = bd->buffer_;
+      data_len = header->data_len;
       recv_or_free = 1;
     } else if (header->data_type == TYPE_WRITE_SUCCESS) {
       RdmaRpc *rpc = (RdmaRpc *)bd->buffer_;
-      copy_buff = (uint8_t *)rpc->addr;
-      start = sizeof(RdmaDataHeader);
-      len = rpc->data_len - sizeof(RdmaDataHeader);
+      buffer = (uint8_t *)rpc->addr;
+      data_len = rpc->data_len;
 
       bd->bytes_ = k1KB;
       if (qp_->PostReceiveOneWithBuffer(bd, BIG_SIGN) < 0) {
@@ -243,11 +243,13 @@ void RdmaEvent::HandleRecvDataEvent() {
       RDMA_ERROR("the recv buffer type must be small_data or write_success");
       abort();
     }
+    uint8_t *copy_buff = buffer + sizeof(RdmaDataHeader);
+    int len = data_len - sizeof(RdmaDataHeader);
 
     jbyteArray jba = jni_alloc_byte_array(len);
-    set_byte_array_region(jba, start, len, copy_buff);
+    set_byte_array_region(jba, 0, len, copy_buff);
     jni_channel_callback(ip_.c_str(), jba, len);
-    //RDMA_INFO("recv buffer {}+{}: {}", (char*)(copy_buff+start),(char*)(copy_buff+start)+len-6, len);
+    //RDMA_INFO("recv buffer {}+{}: {}", (char*)(copy_buff),(char*)copy_buff+len-6, len);
 
     if (recv_or_free == 1) {
       bd->bytes_ = k1KB;
@@ -256,14 +258,14 @@ void RdmaEvent::HandleRecvDataEvent() {
         abort();
       }
     } else if (recv_or_free == 2) {
-      RFREE(copy_buff, start + len);
+      RFREE(buffer,  data_len);
     } else {
       RDMA_ERROR("recv_or_free = 1 or 2, but now is {}", recv_or_free);
       abort();
     }
 
     recv_data_id_++;
-    RDMA_DEBUG("success handle a data_id {}", data_id);
+    RDMA_DEBUG("success handle a data_id {} of {}", data_id, ip_);
   }
 }
 
@@ -391,6 +393,20 @@ std::pair<BufferDescriptor*, int> RdmaEvent::GetDataById(uint32_t id) {
 void RdmaEvent::PutDataById(uint32_t id, BufferDescriptor *buf, int num) {
   std::lock_guard<std::mutex> lock(id2data_lock_);
   id2data_[id] = std::pair<BufferDescriptor*, int>(buf, num);
+}
+
+int test_print(uint8_t *out, int len, char *mark) {
+  char print[600];
+  memset(print, 0, sizeof(print));
+  strcpy(print, mark);
+  int vis = (int)strlen(print);
+  for (int i = 0; i < len; ++i) {
+    sprintf(print+vis, "%02x ", out[i]);
+    vis += 3;
+  }
+  print[vis] = '\0';
+  RDMA_DEBUG("{}", print);
+  return 0;
 }
 
 } // namespace SparkRdmaNetwork
