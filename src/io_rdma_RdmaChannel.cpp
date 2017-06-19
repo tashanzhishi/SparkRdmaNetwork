@@ -41,19 +41,19 @@ JNIEXPORT void JNICALL Java_io_rdma_RdmaChannel_sendHeader
   RdmaChannel *channel = RdmaChannel::GetChannelByIp(ip);
   GPR_ASSERT(channel != nullptr);
 
-  jclass ByteBuffer = env->FindClass("java/nio/ByteBuffer");
+  static jclass ByteBuffer = env->FindClass("java/nio/ByteBuffer");
   if (ByteBuffer == nullptr) {
     RDMA_ERROR("find class java.nio.ByteBuffer failed");
     return;
   }
   // ByteBuffer.array()
-  jmethodID array = env->GetMethodID(ByteBuffer, "array", "()[B");
+  static jmethodID array = env->GetMethodID(ByteBuffer, "array", "()[B");
   if (array == nullptr) {
     RDMA_ERROR("find ByteBuffer method array failed");
     return;
   }
   // ByteBuffer.position()
-  jmethodID position = env->GetMethodID(ByteBuffer, "position", "()I");
+  static jmethodID position = env->GetMethodID(ByteBuffer, "position", "()I");
   if (position == nullptr) {
     RDMA_ERROR("find ByteBuffer method position failed");
     return;
@@ -105,19 +105,19 @@ JNIEXPORT void JNICALL Java_io_rdma_RdmaChannel_sendHeaderWithBody
   RdmaChannel *channel = RdmaChannel::GetChannelByIp(ip);
   GPR_ASSERT(channel != nullptr);
 
-  jclass ByteBuffer = env->FindClass("java/nio/ByteBuffer");
+  static jclass ByteBuffer = env->FindClass("java/nio/ByteBuffer");
   if (ByteBuffer == nullptr) {
     RDMA_ERROR("find class java.nio.ByteBuffer failed");
     return;
   }
   // ByteBuffer.array()
-  jmethodID array = env->GetMethodID(ByteBuffer, "array", "()[B");
+  static jmethodID array = env->GetMethodID(ByteBuffer, "array", "()[B");
   if (array == nullptr) {
     RDMA_ERROR("find ByteBuffer.array() failed");
     return;
   }
   // ByteBuffer.position()
-  jmethodID position = env->GetMethodID(ByteBuffer, "position", "()I");
+  static jmethodID position = env->GetMethodID(ByteBuffer, "position", "()I");
   if (position == nullptr) {
     RDMA_ERROR("find ByteBuffer.position() failed");
     return;

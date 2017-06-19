@@ -31,6 +31,8 @@ public:
 
   void PutDataById(uint32_t id, BufferDescriptor *buf, int num);
 
+  static boost::basic_thread_pool thread_pool_;
+
 private:
   int Poll(int timeout);
   void PollThreadFunc();
@@ -45,8 +47,6 @@ private:
   void HandleSendDataEvent();
   void HandleReqRpcEvent(BufferDescriptor *);
   void HandleAckRpcEvent(BufferDescriptor *);
-
-  static boost::basic_thread_pool thread_pool_;
 
   int kill_fd_;
   std::string ip_;

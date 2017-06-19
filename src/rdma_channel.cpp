@@ -42,11 +42,13 @@ RdmaChannel* RdmaChannel::GetChannelByIp(const std::string &ip) {
 }
 
 void RdmaChannel::DestroyAllChannel() {
+  RDMA_INFO("destroy channel and thread pool");
   WriteLock wr_lock(Ip2ChannelLock);
   for (auto &kv : Ip2Channel) {
     RdmaChannel *channel = kv.second;
     delete channel;
   }
+  RdmaEvent::thread_pool_.close();
 }
 
 // RdmaChannel must be create once between two machine

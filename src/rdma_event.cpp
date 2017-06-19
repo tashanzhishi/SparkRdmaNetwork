@@ -162,13 +162,13 @@ int RdmaEvent::Poll(int timeout) {
         RdmaDataHeader *header = (RdmaDataHeader *) bd->buffer_;
         if (header->data_type == TYPE_SMALL_DATA || header->data_type == TYPE_WRITE_SUCCESS) {
           RDMA_DEBUG("insert recv data {}:{}:{}", ip_, header->data_id, header->data_len);
+          recv_event_num++;
           {
             std::lock_guard<std::mutex> lock(recv_data_lock_);
             recv_data_[header->data_id] = bd;
-          }
-          recv_event_num++;
-          {
-            std::lock_guard<std::mutex> lock(recv_running_lock_);
+          //}
+          //{
+            //std::lock_guard<std::mutex> lock(recv_running_lock_);
             if (recv_runing_ == 0) {
               HandleFunction handle = std::bind(&RdmaEvent::HandleRecvDataEvent, this);
               // when data_id = recv_data_id_ wakeup ?
