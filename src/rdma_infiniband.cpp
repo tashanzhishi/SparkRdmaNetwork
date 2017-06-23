@@ -21,6 +21,9 @@ RdmaInfiniband* RdmaInfiniband::infiniband_ = nullptr;
 RdmaInfiniband::CompletionQueue::CompletionQueue(RdmaInfiniband &infiniband, int min_cqe) {
   RDMA_TRACE("create CompletionQueue");
 
+  send_cq_channel_ = ibv_create_comp_channel(infiniband.device_.ctx_);
+  GPR_ASSERT(send_cq_channel_);
+
   recv_cq_channel_ = ibv_create_comp_channel(infiniband.device_.ctx_);
   GPR_ASSERT(recv_cq_channel_);
 
@@ -30,12 +33,24 @@ RdmaInfiniband::CompletionQueue::CompletionQueue(RdmaInfiniband &infiniband, int
   recv_cq_ = ibv_create_cq(infiniband.device_.ctx_, min_cqe, nullptr, recv_cq_channel_, 0);
   GPR_ASSERT(recv_cq_);
 
+  if (ibv_req_notify_cq(send_cq_, 0) != 0) {
+    RDMA_ERROR("ibv_req_notify_cq error: {}", strerror(errno));
+    abort();
+  }
+
   if (ibv_req_notify_cq(recv_cq_, 0) != 0) {
     RDMA_ERROR("ibv_req_notify_cq error: {}", strerror(errno));
     abort();
   }
 
-  int flags = fcntl(recv_cq_channel_->fd, F_GETFL);
+  int flags = fcntl(send_cq_channel_->fd, F_GETFL);
+  if (fcntl(send_cq_channel_->fd, F_SETFL, flags|O_NONBLOCK) < 0) {
+    RDMA_ERROR("Failed to change file descriptor of Completion Event Channel");
+    abort();
+  }
+  RDMA_DEBUG("send_cq_channel->fd = {}", send_cq_channel_->fd);
+
+  flags = fcntl(recv_cq_channel_->fd, F_GETFL);
   if (fcntl(recv_cq_channel_->fd, F_SETFL, flags|O_NONBLOCK) < 0) {
     RDMA_ERROR("Failed to change file descriptor of Completion Event Channel");
     abort();
@@ -48,6 +63,7 @@ RdmaInfiniband::CompletionQueue::CompletionQueue(RdmaInfiniband &infiniband, int
 RdmaInfiniband::CompletionQueue::~CompletionQueue() {
   RDMA_TRACE("destroy CompletionQueue");
 
+  ibv_destroy_comp_channel(send_cq_channel_);
   ibv_destroy_comp_channel(recv_cq_channel_);
   ibv_destroy_cq(recv_cq_);
   ibv_destroy_cq(send_cq_);
@@ -202,6 +218,7 @@ int RdmaInfiniband::QueuePair::PostReceiveWithNum(void *channel, bool is_small, 
 
   for (int i = 0; i < num; ++i) {
     BufferDescriptor *buffer = new BufferDescriptor();
+    buffer->total_num_ = 1;
     buffer->buffer_ = (uint8_t *)RMALLOC(k1KB);
     buffer->bytes_ = k1KB;
     buffer->mr_ = GET_MR(buffer->buffer_);
@@ -241,6 +258,29 @@ void RdmaInfiniband::QueuePair::PreReceive(void *channel, int small, int big) {
     abort();
   }
   RDMA_DEBUG("PreReceive {} {}", small, big);
+}
+
+int RdmaInfiniband::QueuePair::PostSend(BufferDescriptor *buf, int num, bool is_small) {
+  ibv_sge sge[num];
+  for (int i = 0; i < num; ++i) {
+    sge[i].addr = (uint64_t)buf[i].buffer_;
+    sge[i].length = buf[i].bytes_;
+    sge[i].lkey = buf[i].mr_->lkey;
+  }
+  ibv_send_wr send_wr;
+  memset(&send_wr, 0, sizeof(send_wr));
+  send_wr.wr_id = (uint64_t)buf;
+  send_wr.sg_list = &sge[0];
+  send_wr.num_sge = num;
+  send_wr.opcode = IBV_WR_SEND;
+  send_wr.send_flags = IBV_SEND_SIGNALED;
+
+  ibv_send_wr *bad = NULL;
+  if (ibv_post_send(is_small?small_qp_:big_qp_, &send_wr, &bad) < 0) {
+    RDMA_ERROR("ibv_post_send error, {}", strerror(errno));
+    return -1;
+  }
+  return 0;
 }
 
 int RdmaInfiniband::QueuePair::PostSendAndWait(BufferDescriptor *buf, int num, bool is_small) {
@@ -285,6 +325,31 @@ int RdmaInfiniband::QueuePair::PostSendAndWait(BufferDescriptor *buf, int num, b
   return 0;
 }
 
+int RdmaInfiniband::QueuePair::PostWrite(BufferDescriptor *buf, int num, uint64_t addr, uint32_t rkey) {
+  ibv_sge sge[num];
+  for (int i = 0; i < num; ++i) {
+    sge[i].addr = (uint64_t)buf[i].buffer_;
+    sge[i].length = buf[i].bytes_;
+    sge[i].lkey = buf[i].mr_->lkey;
+  }
+  ibv_send_wr send_wr;
+  memset(&send_wr, 0, sizeof(send_wr));
+  send_wr.wr_id = 0;
+  send_wr.sg_list = &sge[0];
+  send_wr.num_sge = num;
+  send_wr.opcode = IBV_WR_RDMA_WRITE;
+  send_wr.send_flags = IBV_SEND_SIGNALED;
+  send_wr.wr.rdma.remote_addr = addr;
+  send_wr.wr.rdma.rkey = rkey;
+
+  ibv_send_wr *bad;
+  if (ibv_post_send(big_qp_, &send_wr, &bad) < 0) {
+    RDMA_ERROR("ibv_post_send error, {}", strerror(errno));
+    return -1;
+  }
+  return 0;
+}
+
 int RdmaInfiniband::QueuePair::PostWriteAndWait(BufferDescriptor *buf, int num, uint64_t addr, uint32_t rkey) {
   ibv_sge sge[num];
   for (int i = 0; i < num; ++i) {
@@ -322,6 +387,31 @@ int RdmaInfiniband::QueuePair::PostWriteAndWait(BufferDescriptor *buf, int num, 
       RDMA_ERROR("ibv_poll_cq error: {}", WcStatusToString(wc.status));
       return -1;
     }
+  }
+  return 0;
+}
+
+int RdmaInfiniband::QueuePair::PostRead(BufferDescriptor *buf, int num, uint64_t addr, uint32_t rkey) {
+  ibv_sge sge[num];
+  for (int i = 0; i < num; ++i) {
+    sge[i].addr = (uint64_t)buf[i].buffer_;
+    sge[i].length = buf[i].bytes_;
+    sge[i].lkey = buf[i].mr_->lkey;
+  }
+  ibv_send_wr send_wr;
+  memset(&send_wr, 0, sizeof(send_wr));
+  send_wr.wr_id = 0;
+  send_wr.sg_list = &sge[0];
+  send_wr.num_sge = num;
+  send_wr.opcode = IBV_WR_RDMA_READ;
+  send_wr.send_flags = IBV_SEND_SIGNALED;
+  send_wr.wr.rdma.remote_addr = addr;
+  send_wr.wr.rdma.rkey = rkey;
+
+  ibv_send_wr *bad;
+  if (ibv_post_send(big_qp_, &send_wr, &bad) < 0) {
+    RDMA_ERROR("ibv_post_send error, {}", strerror(errno));
+    return -1;
   }
   return 0;
 }

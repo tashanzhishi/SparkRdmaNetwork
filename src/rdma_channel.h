@@ -33,9 +33,6 @@ public:
   int Init(const char *host, uint16_t port);
   // the host and port is not used
   int SendMsg(const char *host, uint16_t port, uint8_t *msg, uint32_t len);
-  int SendMsgWithHeader(const char *host, uint16_t port,
-                        uint8_t *header, const uint32_t header_len,
-                        uint8_t* body, const uint32_t body_len);
 
   int InitChannel(std::shared_ptr<RdmaSocket> socket, bool is_accept);
 

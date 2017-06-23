@@ -51,8 +51,10 @@ const int kRdmaMemoryFlag = IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ | IB
 #define SMALL_SIGN true
 #define BIG_SIGN false
 
+const uint32_t kSmallBig = 1024;
+
 inline bool IS_SMALL(uint32_t len) {
-  return len + sizeof(RdmaDataHeader) <= 1024;
+  return len + sizeof(RdmaDataHeader) <= kSmallBig;
 }
 
 } // namespace SparkRdmaNetwork

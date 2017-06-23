@@ -87,96 +87,46 @@ int RdmaChannel::Init(const char *c_host, uint16_t port) {
   return 0;
 }
 
+// msg = data_header + spark_msg
 int RdmaChannel::SendMsg(const char *host, uint16_t port, uint8_t *msg, uint32_t len) {
-  if (port == 0) {
-    port = kDefaultPort;
-  }
   uint32_t data_id = std::atomic_fetch_add(&data_id_, (uint32_t)1);
   data_id += 1;
-  uint32_t data_len = len + sizeof(RdmaDataHeader);
   RDMA_DEBUG("SendMsg {}:{}:{} {}", host, port, data_id, len);
 
-  RdmaDataHeader *header = (RdmaDataHeader *)RMALLOC(sizeof(RdmaDataHeader));
-  memset(header, 0, sizeof(RdmaDataHeader));
-  header->data_id = data_id;
-  header->data_len = data_len;
+  RdmaDataHeader *data_header = (RdmaDataHeader*)msg;
+  data_header->data_type = (len <= kSmallBig)? TYPE_SMALL_DATA: TYPE_BIG_DATA;
+  data_header->data_len = len;
+  data_header->data_id = data_id;
 
-  BufferDescriptor *send_buff = new BufferDescriptor[2];
-  send_buff[0].buffer_ = (uint8_t*)header;
-  send_buff[0].bytes_ = sizeof(RdmaDataHeader);
-  send_buff[0].channel_ = this;
-  send_buff[0].mr_ = GET_MR(header);
-  send_buff[1].buffer_ = msg;
-  send_buff[1].bytes_ = len;
-  send_buff[1].channel_ = this;
-  send_buff[1].mr_ = GET_MR(msg);
+  BufferDescriptor *data_bd = new BufferDescriptor();
+  memset(data_bd, 0, sizeof(BufferDescriptor));
+  data_bd->buffer_ = msg;
+  data_bd->bytes_ = len;
+  data_bd->mr_ = GET_MR(msg);
 
-  if (IS_SMALL(data_len)) {
-    header->data_type = TYPE_SMALL_DATA;
-    if (qp_->PostSendAndWait(send_buff, 2, true) < 0) {
-      RDMA_ERROR("PostSendAndWait small_data failed");
+  if (len <= kSmallBig) {
+    if (qp_->PostSend(data_bd, 1, SMALL_SIGN) < 0) {
+      RDMA_ERROR("PostSend small_data failed");
       abort();
     }
-    for (int i = 0; i < 2; ++i) {
-      RFREE(send_buff[i].buffer_, send_buff[i].bytes_);
-    }
-    delete[] send_buff;
   } else {
-    header->data_type = TYPE_RPC_REQ;
-    event_->PutDataById(data_id, send_buff, 2);
-    if (qp_->PostSendAndWait(send_buff, 1, false) < 0) {
-      RDMA_ERROR("PostSendAndWait req rpc failed");
-      abort();
-    }
-  }
+    // wait for read
+    event_->PutDataById(data_id, data_bd, 1);
 
-  return 0;
-}
+    RdmaRpc *rpc = (RdmaRpc*)RMALLOC(sizeof(RdmaRpc));
+    rpc->data_type = TYPE_RPC_REQ;
+    rpc->data_id = data_id;
+    rpc->data_len = len;
+    rpc->addr = (uint64_t)msg;
+    rpc->rkey = data_bd->mr_->rkey;
 
-int RdmaChannel::SendMsgWithHeader(const char *host, uint16_t port, uint8_t *header, const uint32_t header_len,
-                                   uint8_t *body, const uint32_t body_len) {
-  uint32_t data_len = sizeof(RdmaDataHeader) + header_len + body_len;
-  uint32_t data_id = std::atomic_fetch_add(&data_id_, (uint32_t)1);
-  data_id += 1;
-  if (port == 0) {
-    port = kDefaultPort;
-  }
-  RDMA_DEBUG("SendMsgWithHeader {}:{}:{} {}:{}", host, port, data_id, header_len, body_len);
+    BufferDescriptor *rpc_bd = new BufferDescriptor();
+    rpc_bd->buffer_ = (uint8_t*)rpc;
+    rpc_bd->bytes_ = sizeof(RdmaRpc);
+    rpc_bd->mr_ = GET_MR(rpc);
 
-  RdmaDataHeader *rdma_header = (RdmaDataHeader *)RMALLOC(sizeof(RdmaDataHeader));
-  memset(rdma_header, 0, sizeof(RdmaDataHeader));
-  rdma_header->data_id = data_id;
-  rdma_header->data_len = data_len;
-
-  BufferDescriptor *send_buff = new BufferDescriptor[3];
-  send_buff[0].buffer_ = (uint8_t*)rdma_header;
-  send_buff[0].bytes_ = sizeof(RdmaDataHeader);
-  send_buff[0].channel_ = this;
-  send_buff[0].mr_ = GET_MR(rdma_header);
-  send_buff[1].buffer_ = header;
-  send_buff[1].bytes_ = header_len;
-  send_buff[1].channel_ = this;
-  send_buff[1].mr_ = GET_MR(header);
-  send_buff[2].buffer_ = body;
-  send_buff[2].bytes_ = body_len;
-  send_buff[2].channel_ = this;
-  send_buff[2].mr_ = GET_MR(body);
-
-  if (IS_SMALL(data_len)) {
-    rdma_header->data_type = TYPE_SMALL_DATA;
-    if (qp_->PostSendAndWait(send_buff, 3, true) < 0) {
-      RDMA_ERROR("PostSendAndWait small_data failed");
-      abort();
-    }
-    for (int i = 0; i < 3; ++i) {
-      RFREE(send_buff[i].buffer_, send_buff[i].bytes_);
-    }
-    delete[] send_buff;
-  } else {
-    rdma_header->data_type = TYPE_RPC_REQ;
-    event_->PutDataById(data_id, send_buff, 3);
-    if (qp_->PostSendAndWait(send_buff, 1, false) < 0) {
-      RDMA_ERROR("PostSendAndWait req rpc failed");
+    if (qp_->PostSend(rpc_bd, 1, BIG_SIGN) < 0) {
+      RDMA_ERROR("PostSend req rpc failed");
       abort();
     }
   }

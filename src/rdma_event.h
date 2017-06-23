@@ -34,8 +34,10 @@ public:
   static boost::basic_thread_pool thread_pool_;
 
 private:
-  int Poll(int timeout);
-  void PollThreadFunc();
+  int PollSendCq(int timeout);
+  int PollRecvCq(int timeout);
+  void PollRecvThreadFunc();
+  void PollSendThreadFunc();
 
   int EventfdCreate();
   int EventfdWakeup(int fd);
@@ -44,13 +46,15 @@ private:
   std::pair<BufferDescriptor*, int> GetDataById(uint32_t id);
 
   void HandleRecvDataEvent();
-  void HandleSendDataEvent();
-  void HandleReqRpcEvent(BufferDescriptor *);
-  void HandleAckRpcEvent(BufferDescriptor *);
+  void HandleRecvReqRpc(BufferDescriptor *);
+  void HandleRecvAckRpc(BufferDescriptor *);
 
-  int kill_fd_;
+  int kill_send_fd_;
+  int kill_recv_fd_;
   std::string ip_;
-  int fd_;
+  int send_fd_;
+  int recv_fd_;
+  ibv_comp_channel *send_cq_channel_;
   ibv_comp_channel *recv_cq_channel_;
   QueuePair *qp_;
   void *rdma_channel;
@@ -58,9 +62,7 @@ private:
   std::map<uint32_t, BufferDescriptor*> recv_data_;
   std::mutex recv_data_lock_;
   std::atomic_uint recv_data_id_;
-  boost::lockfree::queue<BufferDescriptor*> send_data_;
-  int send_running_, recv_runing_;
-  std::mutex send_running_lock_, recv_running_lock_;
+  int recv_runing_;
 
   std::map<uint32_t, std::pair<BufferDescriptor*, int> > id2data_;
   std::mutex id2data_lock_;

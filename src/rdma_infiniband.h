@@ -105,11 +105,11 @@ public:
   };
 
   struct BufferDescriptor {
-    BufferDescriptor(uint8_t *buffer, uint32_t bytes, ibv_mr *mr, void *channel) :
-        buffer_(buffer), bytes_(bytes), mr_(mr), channel_(channel){}
+    BufferDescriptor(int num, uint8_t *buffer, uint32_t bytes, ibv_mr *mr, void *channel) :
+        total_num_(num), buffer_(buffer), bytes_(bytes), mr_(mr), channel_(channel){}
     BufferDescriptor() :
-        buffer_(nullptr), bytes_(0), mr_(nullptr), channel_(nullptr){}
-
+        total_num_(0), buffer_(nullptr), bytes_(0), mr_(nullptr), channel_(nullptr){}
+    int total_num_;
     uint8_t *buffer_;
     uint32_t bytes_;
     ibv_mr *mr_;
@@ -127,8 +127,10 @@ public:
     inline ibv_cq* get_send_cq() { return send_cq_;}
     inline ibv_cq* get_recv_cq() { return recv_cq_;}
     inline ibv_comp_channel* get_recv_cq_channel() { return recv_cq_channel_;}
+    inline ibv_comp_channel* get_send_cq_channel() { return send_cq_channel_;}
 
   private:
+    ibv_comp_channel* send_cq_channel_;
     ibv_comp_channel* recv_cq_channel_;
     ibv_cq *send_cq_;
     ibv_cq *recv_cq_;
@@ -160,8 +162,11 @@ public:
     int PostReceiveWithNum(void *channel, bool is_small, int num);
     int PostReceiveOneWithBuffer(BufferDescriptor *buf, bool is_small);
 
+    int PostSend(BufferDescriptor *buf, int num, bool is_small);
     int PostSendAndWait(BufferDescriptor *buf, int num, bool is_small);
+    int PostWrite(BufferDescriptor *buf, int num, uint64_t addr, uint32_t rkey);
     int PostWriteAndWait(BufferDescriptor *buf, int num, uint64_t addr, uint32_t rkey);
+    int PostRead(BufferDescriptor *buf, int num, uint64_t addr, uint32_t rkey);
     static const char* WcStatusToString(int status);
   private:
     RdmaInfiniband& infiniband_;

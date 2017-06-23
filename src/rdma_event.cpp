@@ -21,22 +21,24 @@ namespace SparkRdmaNetwork {
 
 boost::basic_thread_pool RdmaEvent::thread_pool_(20);
 
-RdmaEvent::RdmaEvent(std::string ip, ibv_comp_channel *recv_cq_channel, QueuePair *qp) : send_data_(1024) {
-  kill_fd_ = EventfdCreate();
-  if (kill_fd_ < 0) {
+RdmaEvent::RdmaEvent(std::string ip, ibv_comp_channel *recv_cq_channel, QueuePair *qp) {
+  kill_recv_fd_ = EventfdCreate();
+  if (kill_recv_fd_ < 0) {
     RDMA_ERROR("create wakeup_fd failed");
     abort();
   }
   ip_ = ip;
   recv_cq_channel_ = recv_cq_channel;
-  fd_ = recv_cq_channel->fd;
+  recv_fd_ = recv_cq_channel->fd;
   qp_ = qp;
-  send_running_ = 0;
   recv_runing_ = 0;
   recv_data_id_ = 1;
 
-  PollFunction poll_func = std::bind(&RdmaEvent::PollThreadFunc, this);
-  thread_pool_.submit(poll_func);
+  PollFunction poll_send_func = std::bind(&RdmaEvent::PollSendThreadFunc, this);
+  PollFunction poll_recv_func = std::bind(&RdmaEvent::PollRecvThreadFunc, this);
+  thread_pool_.submit(poll_send_func);
+  thread_pool_.submit(poll_recv_func);
+
   RDMA_INFO("create RdmaEvent for {}", ip_);
 }
 
@@ -79,31 +81,140 @@ int RdmaEvent::EventfdConsume(int fd) {
 }
 
 int RdmaEvent::KillPollThread() {
-  EventfdWakeup(kill_fd_);
+  EventfdWakeup(kill_recv_fd_);
   return 0;
 }
 
-void RdmaEvent::PollThreadFunc() {
-  RDMA_INFO("poll thread for {} start", ip_);
+void RdmaEvent::PollSendThreadFunc() {
+  RDMA_INFO("poll send thread for {} start", ip_);
   while (1) {
-    int ret = Poll(500);
+    int ret = PollSendCq(500);
     if (ret == 1) {
-      RDMA_INFO("poll thrad end");
+      RDMA_INFO("poll send cq thrad end");
       return;
     } else if (ret == -1) {
-      RDMA_ERROR("poll thread failed");
+      RDMA_ERROR("poll send cq thread failed");
       abort();
     }
   }
 }
 
-// one poll thread
-int RdmaEvent::Poll(int timeout) {
+void RdmaEvent::PollRecvThreadFunc() {
+  RDMA_INFO("poll recv thread for {} start", ip_);
+  while (1) {
+    int ret = PollRecvCq(500);
+    if (ret == 1) {
+      RDMA_INFO("poll recv thrad end");
+      return;
+    } else if (ret == -1) {
+      RDMA_ERROR("poll recv thread failed");
+      abort();
+    }
+  }
+}
+
+int RdmaEvent::PollSendCq(int timeout) {
   struct pollfd pfds[2];
-  pfds[0].fd = kill_fd_;
+  pfds[0].fd = kill_recv_fd_;
   pfds[0].events = POLLIN;
   pfds[0].revents = 0;
-  pfds[1].fd = fd_;
+  pfds[1].fd = send_fd_;
+  pfds[1].events = POLLIN;
+  pfds[1].revents = 0;
+
+  int ret = 0;
+  do {
+    ret = poll(pfds, 2, -1);
+    if (ret == -1) {
+      RDMA_ERROR("poll error: {}", strerror(errno));
+      return -1;
+    }
+  } while (ret == 0 || (ret == -1 && errno == EINTR));
+
+  if (pfds[0].revents & POLLIN) {
+    RDMA_INFO("kill send poll thread {}", ip_);
+    EventfdConsume(pfds[0].fd);
+    close(pfds[0].fd);
+    return 1;
+  }
+
+  if (pfds[1].revents & POLLIN) {
+    ibv_cq *ev_cq;
+    void *ev_ctx;
+    if (ibv_get_cq_event(send_cq_channel_, &ev_cq, &ev_ctx) < 0) {
+      RDMA_ERROR("ibv_get_cq_event error, {}", strerror(errno));
+      abort();
+    }
+    ibv_ack_cq_events(ev_cq, 1);
+    if (ibv_req_notify_cq(ev_cq, 0) < 0) {
+      RDMA_ERROR("ibv_req_notify_cq error, {}", strerror(errno));
+      abort();
+    }
+
+    int event_num;
+    do {
+      ibv_wc wc;
+      event_num = ibv_poll_cq(ev_cq, 1, &wc);
+
+      if (event_num < 0) {
+        RDMA_ERROR("ibv_poll_cq poll failed");
+        abort();
+      } else if (event_num == 0) {
+        break;
+      } else {
+        if (wc.status != IBV_WC_SUCCESS) {
+          RDMA_ERROR("ibv_poll_cq error, {}", QueuePair::WcStatusToString(wc.status));
+          abort();
+        }
+        if (wc.opcode != IBV_WC_SEND || wc.opcode != IBV_WC_RDMA_READ) {
+          RDMA_ERROR("all poll event must be send or rdma read");
+          abort();
+        }
+        BufferDescriptor *bd = (BufferDescriptor*)wc.wr_id;
+        RdmaDataHeader *data_header = (RdmaDataHeader*)bd->buffer_;
+        if (data_header->data_type == TYPE_SMALL_DATA ||
+            data_header->data_type == TYPE_RPC_REQ ||
+            data_header->data_type == TYPE_RPC_ACK) {
+          RFREE(bd->buffer_, bd->bytes_);
+          delete bd;
+        } else if (data_header->data_type == TYPE_BIG_DATA) {
+          // send a ack to peer
+          RdmaRpc *ack = (RdmaRpc*)RMALLOC(sizeof(RdmaRpc));
+          memset(ack, 0, sizeof(RdmaRpc));
+          memcpy(ack, data_header, sizeof(RdmaDataHeader));
+          BufferDescriptor *ack_bd = new BufferDescriptor();
+          ack_bd->buffer_ = (uint8_t*)ack;
+          ack_bd->bytes_ = sizeof(RdmaRpc);
+          ack_bd->mr_ = GET_MR(ack);
+          if (qp_->PostSend(ack_bd, 1, BIG_SIGN) < 0) {
+            RDMA_ERROR("PostSend req rpc failed");
+            abort();
+          }
+
+          RDMA_DEBUG("insert recv data {}:{}:{}", ip_, data_header->data_id, data_header->data_len);
+          {
+            std::lock_guard<std::mutex> lock(recv_data_lock_);
+            recv_data_[data_header->data_id] = bd;
+            if (recv_runing_ == 0) {
+              HandleFunction handle = std::bind(&RdmaEvent::HandleRecvDataEvent, this);
+              thread_pool_.submit(handle);
+              recv_runing_ = 1;
+              RDMA_DEBUG("submit a handle recv data thread");
+            }
+          }
+        }
+      }
+    } while (event_num);
+  }
+}
+
+// one poll thread
+int RdmaEvent::PollRecvCq(int timeout) {
+  struct pollfd pfds[2];
+  pfds[0].fd = kill_recv_fd_;
+  pfds[0].events = POLLIN;
+  pfds[0].revents = 0;
+  pfds[1].fd = recv_fd_;
   pfds[1].events = POLLIN;
   pfds[1].revents = 0;
 
@@ -119,10 +230,10 @@ int RdmaEvent::Poll(int timeout) {
   if (pfds[0].revents & POLLIN) {
     RDMA_INFO("kill poll thread {}", ip_);
     EventfdConsume(pfds[0].fd);
-    close(kill_fd_);
+    close(pfds[0].fd);
     return 1;
   }
-  int recv_event_num = 0, send_event_num = 0;;
+
   if (pfds[1].revents & POLLIN) {
     ibv_cq *ev_cq;
     void *ev_ctx;
@@ -157,39 +268,25 @@ int RdmaEvent::Poll(int timeout) {
           RDMA_ERROR("all poll event must be recv");
           abort();
         }
-        BufferDescriptor *bd = (BufferDescriptor *) wc.wr_id;
+        BufferDescriptor *bd = (BufferDescriptor*)wc.wr_id;
         bd->bytes_ = wc.byte_len;
-        RdmaDataHeader *header = (RdmaDataHeader *) bd->buffer_;
-        if (header->data_type == TYPE_SMALL_DATA || header->data_type == TYPE_WRITE_SUCCESS) {
-          RDMA_DEBUG("insert recv data {}:{}:{}", ip_, header->data_id, header->data_len);
-          recv_event_num++;
+        RdmaDataHeader *data_header = (RdmaDataHeader*)bd->buffer_;
+        if (data_header->data_type == TYPE_SMALL_DATA) {
+          RDMA_DEBUG("insert recv data {}:{}:{}", ip_, data_header->data_id, data_header->data_len);
           {
             std::lock_guard<std::mutex> lock(recv_data_lock_);
-            recv_data_[header->data_id] = bd;
-          //}
-          //{
-            //std::lock_guard<std::mutex> lock(recv_running_lock_);
+            recv_data_[data_header->data_id] = bd;
             if (recv_runing_ == 0) {
               HandleFunction handle = std::bind(&RdmaEvent::HandleRecvDataEvent, this);
-              // when data_id = recv_data_id_ wakeup ?
               thread_pool_.submit(handle);
               recv_runing_ = 1;
               RDMA_DEBUG("submit a handle recv data thread");
             }
           }
-        } else if (header->data_type == TYPE_RPC_REQ || header->data_type == TYPE_RPC_ACK) {
-          RDMA_DEBUG("recv a rpc id = {}", header->data_id);
-          send_data_.push(bd);
-          send_event_num++;
-          {
-            std::lock_guard<std::mutex> lock(send_running_lock_);
-            if (send_running_ == 0) {
-              HandleFunction handle = std::bind(&RdmaEvent::HandleSendDataEvent, this);
-              thread_pool_.submit(handle);
-              send_running_ = 1;
-              RDMA_DEBUG("submit a handle rpc thread");
-            }
-          }
+        } else if (data_header->data_type == TYPE_RPC_REQ) {
+          HandleRecvReqRpc(bd);
+        } else if (data_header->data_type == TYPE_RPC_ACK) {
+          HandleRecvAckRpc(bd);
         } else {
           RDMA_ERROR("unknow recv data header, maybe send error or recv error");
           abort();
@@ -201,7 +298,6 @@ int RdmaEvent::Poll(int timeout) {
   return 0;
 }
 
-// recv small data, or big data successed writed
 void RdmaEvent::HandleRecvDataEvent() {
   RDMA_DEBUG("start a handle recv event thread for {}", ip_);
   while (1) {
@@ -218,49 +314,29 @@ void RdmaEvent::HandleRecvDataEvent() {
       recv_data_.erase(data_id);
     }
 
-    int recv_or_free = 0;
-    RdmaDataHeader *header = (RdmaDataHeader *)bd->buffer_;
-    RDMA_DEBUG("handle recv data {}:{}:{}", ip_, data_id, header->data_len);
+    RdmaDataHeader *header = (RdmaDataHeader*)bd->buffer_;
+    uint32_t data_len = header->data_len;
+    RDMA_DEBUG("handle recv data {}:{}:{}", ip_, data_id, data_len);
 
-    uint8_t *buffer = nullptr;
-    uint32_t data_len = 0;
+    uint8_t *copy_buff = bd->buffer_ + sizeof(RdmaDataHeader);
+    int copy_len = data_len - sizeof(RdmaDataHeader);
+
+    jbyteArray jba = jni_alloc_byte_array(copy_len);
+    set_byte_array_region(jba, 0, copy_len, copy_buff);
+    jni_channel_callback(ip_.c_str(), jba, copy_len);
+    //RDMA_INFO("recv buffer {}+{}: {}", (char*)(copy_buff),(char*)copy_buff+copy_len-6, copy_len);
+
     if (header->data_type == TYPE_SMALL_DATA) {
-      buffer = bd->buffer_;
-      data_len = header->data_len;
-      recv_or_free = 1;
-    } else if (header->data_type == TYPE_WRITE_SUCCESS) {
-      RdmaRpc *rpc = (RdmaRpc *)bd->buffer_;
-      buffer = (uint8_t *)rpc->addr;
-      data_len = rpc->data_len;
-
-      bd->bytes_ = k1KB;
-      if (qp_->PostReceiveOneWithBuffer(bd, BIG_SIGN) < 0) {
-        RDMA_ERROR("post recv with reuse data failed");
-        abort();
-      }
-      recv_or_free = 2;
-    } else {
-      RDMA_ERROR("the recv buffer type must be small_data or write_success");
-      abort();
-    }
-    uint8_t *copy_buff = buffer + sizeof(RdmaDataHeader);
-    int len = data_len - sizeof(RdmaDataHeader);
-
-    jbyteArray jba = jni_alloc_byte_array(len);
-    set_byte_array_region(jba, 0, len, copy_buff);
-    jni_channel_callback(ip_.c_str(), jba, len);
-    //RDMA_INFO("recv buffer {}+{}: {}", (char*)(copy_buff),(char*)copy_buff+len-6, len);
-
-    if (recv_or_free == 1) {
       bd->bytes_ = k1KB;
       if (qp_->PostReceiveOneWithBuffer(bd, SMALL_SIGN) < 0) {
         RDMA_ERROR("post recv with reuse data failed");
         abort();
       }
-    } else if (recv_or_free == 2) {
-      RFREE(buffer,  data_len);
+    } else if (header->data_type == TYPE_BIG_DATA) {
+      RFREE(bd->buffer_,  bd->bytes_);
+      delete bd;
     } else {
-      RDMA_ERROR("recv_or_free = 1 or 2, but now is {}", recv_or_free);
+      RDMA_ERROR("handle recv data type must be small or big");
       abort();
     }
 
@@ -269,113 +345,53 @@ void RdmaEvent::HandleRecvDataEvent() {
   }
 }
 
-void RdmaEvent::HandleSendDataEvent() {
-  while (1) {
-    if (send_data_.empty()) {
-      std::lock_guard<std::mutex> lock(send_running_lock_);
-      if (send_data_.empty()) {
-        send_running_ = 0;
-        return;
-      }
-    }
-    BufferDescriptor *bd;
-    send_data_.pop(bd);
-    RdmaDataHeader *header = (RdmaDataHeader *)bd->buffer_;
-    if (header->data_type == TYPE_RPC_REQ) {
-      HandleReqRpcEvent(bd);
-    } else if (header->data_type == TYPE_RPC_ACK) {
-      HandleAckRpcEvent(bd);
-    } else {
-      RDMA_ERROR("handle send event's data_type must be rpc_req or rpc_ack");
-      abort();
-    }
-  }
-}
 
-// recv a rpc contain a size which writed by peer, and should malloc registed memory
-// and send the addr to peer
-// must not modify bd->buffer_, bd->mr_.
-void RdmaEvent::HandleReqRpcEvent(BufferDescriptor *bd) {
+
+// recv a rpc (data addr rkey size) from peer, and should malloc registed memory
+// and read remote memory
+// must not reuse bd
+void RdmaEvent::HandleRecvReqRpc(BufferDescriptor *bd) {
   RDMA_TRACE("handle a request rpc");
-  GPR_ASSERT(sizeof(RdmaDataHeader) == bd->bytes_);
-  RdmaDataHeader *header = (RdmaDataHeader *)bd->buffer_;
-  GPR_ASSERT(header->data_type == TYPE_RPC_REQ);
+  GPR_ASSERT(sizeof(RdmaRpc) == bd->bytes_);
+  RdmaRpc *rpc = (RdmaRpc *)bd->buffer_;
 
-  uint32_t len = header->data_len;
-  uint32_t data_id = header->data_id;
+  uint32_t data_len = rpc->data_len;
+  uint64_t addr = rpc->addr;
+  uint32_t rkey = rpc->rkey;
+  uint8_t *buffer = (uint8_t*)RMALLOC(data_len);
 
-  uint8_t *buffer = (uint8_t *)RMALLOC(len);
-  uint32_t rkey = GET_MR(buffer)->rkey;
+  BufferDescriptor *read_bd = new BufferDescriptor();
+  memset(read_bd, 0, sizeof(BufferDescriptor));
+  read_bd->buffer_ = buffer;
+  read_bd->bytes_ = data_len;
+  read_bd->mr_ = GET_MR(buffer);
 
-  // send addr to peer
-  RdmaRpc *ack_data = (RdmaRpc*)bd->buffer_;
-  ack_data->data_type = TYPE_RPC_ACK;
-  ack_data->addr = (uint64_t) buffer;
-  ack_data->rkey = rkey;
-  ack_data->data_id = data_id;
-
-  bd->bytes_ = sizeof(RdmaRpc);
-  bd->channel_ = nullptr;
-  if (qp_->PostSendAndWait(bd, 1, BIG_SIGN) < 0) {
-    RDMA_ERROR("PostSendAndWait ack rpc failed");
+  if (qp_->PostRead(read_bd, 1, addr, rkey) < 0) {
+    RDMA_ERROR("PostRead failed");
     abort();
   }
-  RDMA_DEBUG("send a ack to {}", ip_);
 
-  bd->bytes_ = k1KB;
   if (qp_->PostReceiveOneWithBuffer(bd, BIG_SIGN) < 0) {
     RDMA_ERROR("post recv with reuse data failed");
     abort();
   }
 }
 
-// recv addr of peer, so write big data to peer and send write success message
-void RdmaEvent::HandleAckRpcEvent(BufferDescriptor *bd) {
-  RDMA_TRACE("handle a ack rpc");
+void RdmaEvent::HandleRecvAckRpc(BufferDescriptor *bd) {
   GPR_ASSERT(sizeof(RdmaRpc) == bd->bytes_);
-  RdmaRpc *header = (RdmaRpc *)bd->buffer_;
-  GPR_ASSERT(header->data_type == TYPE_RPC_ACK);
+  RdmaRpc *ack = (RdmaRpc *)bd->buffer_;
+  uint32_t data_id = ack->data_id;
+  std::pair<BufferDescriptor*, int> free_data = GetDataById(data_id);
+  BufferDescriptor *free_bd = free_data.first;
+  int num = free_data.second;
+  for (int i = 0; i < num; ++i) {
+    RFREE(free_bd[i].buffer_, free_bd[i].bytes_);
+  }
+  delete free_bd;
 
-  uint64_t addr = header->addr;
-  uint32_t rkey = header->rkey;
-  uint32_t data_id = header->data_id;
-
-  std::pair<BufferDescriptor*, int> write_data = GetDataById(data_id);
-  if (write_data.first == nullptr && write_data.second == 0) {
-    RDMA_ERROR("get big data from data_id failed. data_id: {}", data_id);
+  if (qp_->PostReceiveOneWithBuffer(bd, BIG_SIGN) < 0) {
+    RDMA_ERROR("post recv with reuse data failed");
     abort();
-  } else {
-    BufferDescriptor *buff = write_data.first;
-    int num = write_data.second;
-    RdmaDataHeader *rdma_header = (RdmaDataHeader *)buff[0].buffer_;
-    rdma_header->data_type = TYPE_BIG_DATA;
-
-    qp_->PostWriteAndWait(buff, num, addr, rkey);
-    RDMA_DEBUG("write a big data to {}", ip_);
-    for (int i = 0; i < num; ++i) {
-      RFREE(buff[i].buffer_, buff[i].bytes_);
-    }
-    if (num == 1) {
-      delete buff;
-    } else if (num == 2 || num == 3) {
-      delete[] buff;
-    } else {
-      RDMA_ERROR("buffer num must be 1, 2, 3, but it is {}", num);
-      abort();
-    }
-
-    header->data_type = TYPE_WRITE_SUCCESS;
-    if (qp_->PostSendAndWait(bd, 1, false) < 0) {
-      RDMA_ERROR("PostSendAndWait write success failed");
-      abort();
-    }
-    RDMA_DEBUG("send write success message to {}", ip_);
-
-    bd->bytes_ = k1KB;
-    if (qp_->PostReceiveOneWithBuffer(bd, BIG_SIGN) < 0) {
-      RDMA_ERROR("post recv with reuse data failed");
-      abort();
-    }
   }
 }
 
