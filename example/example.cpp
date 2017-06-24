@@ -45,61 +45,39 @@ void test_client(char *host) {
 }
 
 void send_thread(RdmaChannel *channel, const char *host, int tid) {
-  int msg_len, head_len, body_len;
+  int msg_len;
   switch (tid) {
     case 1:
       msg_len = k32B - 9;
-      head_len = 10;
-      body_len = msg_len - head_len;
       break;
     case 2:
       msg_len = k1KB - 9;
-      head_len = 100;
-      body_len = msg_len - head_len;
       break;
     case 3:
-      msg_len = k1KB*4;
-      head_len = 100;
-      body_len = msg_len - head_len;
+      msg_len = k1KB*4 - 9;
       break;
     case 4:
-      msg_len = k1MB*2;
-      head_len = 100;
-      body_len = msg_len - head_len;
+      msg_len = k1MB*2 - 9;
       break;
     case 5:
-      msg_len = k32MB*2;
-      head_len = 100;
-      body_len = msg_len - head_len;
+      msg_len = k32MB*2 - 9;
       break;
   }
-  char mark_begin[10], mark_end[10], mark_head[10];
+  char mark_begin[10], mark_end[10];
 
-  int num = 3;
+  int num = 5;
   int send_id;
   for (int i = 0; i < num; ++i) {
     send_id = atomic_fetch_add(&id, 1);
-    sprintf(mark_begin, "m%d:%d ", send_id, i);
-    sprintf(mark_head, "h%d:%d ", send_id, i);
-    sprintf(mark_end, "nd%d\n", send_id);
+    sprintf(mark_begin, "\nbegin:%d ", send_id);
+    sprintf(mark_end, "end:%d\n", send_id);
 
-    char *msg = (char *) RMALLOC(msg_len);
+    char *data = (char *)RMALLOC(msg_len+9);
+    char *msg = data + 9;
+    memset(msg, 0, msg_len);
     strcpy(msg, mark_begin);
-    for (int i = strlen(mark_begin); i < msg_len; ++i)
-      msg[i] = '\0';
     strcpy(msg + msg_len - strlen(mark_end) - 1, mark_end);
-    channel->SendMsg(host, port, (uint8_t *) msg, msg_len);
-
-    send_id = atomic_fetch_add(&id, 1);
-    sprintf(mark_head, "h%d:%d ", send_id, i);
-    sprintf(mark_end, "nd%d\n", send_id);
-
-    char *head = (char*)RMALLOC(head_len);
-    strcpy(head, mark_head);
-    char *body = (char *)RMALLOC(body_len);
-    memset(body, 0, body_len);
-    strcpy(body+body_len-strlen(mark_end)-1, mark_end);
-    channel->SendMsgWithHeader(host, port, (uint8_t*)head, head_len, (uint8_t*)body, body_len);
+    channel->SendMsg(host, port, (uint8_t*)data, msg_len+9);
   }
   sleep(1);
 }

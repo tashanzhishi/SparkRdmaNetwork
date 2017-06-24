@@ -218,7 +218,6 @@ int RdmaInfiniband::QueuePair::PostReceiveWithNum(void *channel, bool is_small, 
 
   for (int i = 0; i < num; ++i) {
     BufferDescriptor *buffer = new BufferDescriptor();
-    buffer->total_num_ = 1;
     buffer->buffer_ = (uint8_t *)RMALLOC(k1KB);
     buffer->bytes_ = k1KB;
     buffer->mr_ = GET_MR(buffer->buffer_);
@@ -334,7 +333,7 @@ int RdmaInfiniband::QueuePair::PostWrite(BufferDescriptor *buf, int num, uint64_
   }
   ibv_send_wr send_wr;
   memset(&send_wr, 0, sizeof(send_wr));
-  send_wr.wr_id = 0;
+  send_wr.wr_id = (uint64_t)buf;
   send_wr.sg_list = &sge[0];
   send_wr.num_sge = num;
   send_wr.opcode = IBV_WR_RDMA_WRITE;
@@ -359,7 +358,7 @@ int RdmaInfiniband::QueuePair::PostWriteAndWait(BufferDescriptor *buf, int num, 
   }
   ibv_send_wr send_wr;
   memset(&send_wr, 0, sizeof(send_wr));
-  send_wr.wr_id = 0;
+  send_wr.wr_id = (uint64_t)buf;
   send_wr.sg_list = sge;
   send_wr.num_sge = num;
   send_wr.opcode = IBV_WR_RDMA_WRITE;
@@ -400,7 +399,7 @@ int RdmaInfiniband::QueuePair::PostRead(BufferDescriptor *buf, int num, uint64_t
   }
   ibv_send_wr send_wr;
   memset(&send_wr, 0, sizeof(send_wr));
-  send_wr.wr_id = 0;
+  send_wr.wr_id = (uint64_t)buf;
   send_wr.sg_list = &sge[0];
   send_wr.num_sge = num;
   send_wr.opcode = IBV_WR_RDMA_READ;

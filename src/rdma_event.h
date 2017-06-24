@@ -24,7 +24,7 @@ typedef std::function<void()> PollFunction;
 
 class RdmaEvent {
 public:
-  RdmaEvent(std::string ip, ibv_comp_channel *recv_cq_channel, QueuePair *qp);
+  RdmaEvent(std::string ip, ibv_comp_channel *send_cq_channel, ibv_comp_channel *recv_cq_channel, QueuePair *qp);
   ~RdmaEvent();
 
   int KillPollThread();

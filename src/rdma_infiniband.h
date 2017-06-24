@@ -105,11 +105,10 @@ public:
   };
 
   struct BufferDescriptor {
-    BufferDescriptor(int num, uint8_t *buffer, uint32_t bytes, ibv_mr *mr, void *channel) :
-        total_num_(num), buffer_(buffer), bytes_(bytes), mr_(mr), channel_(channel){}
+    BufferDescriptor(uint8_t *buffer, uint32_t bytes, ibv_mr *mr, void *channel) :
+        buffer_(buffer), bytes_(bytes), mr_(mr), channel_(channel){}
     BufferDescriptor() :
-        total_num_(0), buffer_(nullptr), bytes_(0), mr_(nullptr), channel_(nullptr){}
-    int total_num_;
+        buffer_(nullptr), bytes_(0), mr_(nullptr), channel_(nullptr){}
     uint8_t *buffer_;
     uint32_t bytes_;
     ibv_mr *mr_;

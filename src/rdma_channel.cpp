@@ -145,7 +145,7 @@ int RdmaChannel::InitChannel(std::shared_ptr<RdmaSocket> socket, bool is_accept)
       cq_ = infiniband->CreateCompleteionQueue();
       qp_ = infiniband->CreateQueuePair(cq_);
       qp_->PreReceive(this);
-      event_ = new RdmaEvent(ip_, cq_->get_recv_cq_channel(), qp_);
+      event_ = new RdmaEvent(ip_, cq_->get_send_cq_channel(), cq_->get_recv_cq_channel(), qp_);
     }
   }
 

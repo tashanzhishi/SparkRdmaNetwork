@@ -30,7 +30,7 @@ enum RdmaDataType: uint8_t {
   TYPE_BIG_DATA,
   TYPE_RPC_REQ,
   TYPE_RPC_ACK,
-  TYPE_WRITE_SUCCESS,
+  TYPE_READ_SUCCESS,
 };
 struct RdmaDataHeader {
   RdmaDataType data_type;
