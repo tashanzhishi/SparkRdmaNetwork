@@ -49,6 +49,8 @@ private:
   void HandleRecvReqRpc(BufferDescriptor *);
   void HandleRecvAckRpc(BufferDescriptor *);
 
+  pthread_t poll_send_thread_id;
+  pthread_t poll_recv_thread_id;
   int kill_send_fd_;
   int kill_recv_fd_;
   std::string ip_;

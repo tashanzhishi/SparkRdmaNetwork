@@ -8,6 +8,8 @@
 #include <cstring>
 #include <poll.h>
 #include <fcntl.h>
+#include <pthread.h>
+#include <signal.h>
 #include <infiniband/verbs.h>
 
 #include <queue>
@@ -21,14 +23,10 @@ namespace SparkRdmaNetwork {
 
 boost::basic_thread_pool RdmaEvent::thread_pool_(20);
 
-RdmaEvent::RdmaEvent(std::string ip, ibv_comp_channel *send_cq_channel, ibv_comp_channel *recv_cq_channel, QueuePair *qp) {
+RdmaEvent::RdmaEvent(std::string ip, ibv_comp_channel *send_cq_channel, ibv_comp_channel *recv_cq_channel,
+                     QueuePair *qp) {
   kill_recv_fd_ = EventfdCreate();
   if (kill_recv_fd_ < 0) {
-    RDMA_ERROR("create wakeup_fd failed");
-    abort();
-  }
-  kill_send_fd_ = EventfdCreate();
-  if (kill_send_fd_ < 0) {
     RDMA_ERROR("create wakeup_fd failed");
     abort();
   }
@@ -90,26 +88,27 @@ int RdmaEvent::EventfdConsume(int fd) {
 
 int RdmaEvent::KillPollThread() {
   EventfdWakeup(kill_recv_fd_);
-  EventfdWakeup(kill_send_fd_);
+  pthread_kill(poll_send_thread_id, SIGQUIT);
   return 0;
+}
+
+static void quit_thread(int signo) {
+  RDMA_DEBUG("thread exit");
+  pthread_exit(NULL);
 }
 
 void RdmaEvent::PollSendThreadFunc() {
   RDMA_INFO("poll send thread for {} start", ip_);
-  while (1) {
-    int ret = PollSendCq(500);
-    if (ret == 1) {
-      RDMA_INFO("poll send cq thrad end");
-      return;
-    } else if (ret == -1) {
-      RDMA_ERROR("poll send cq thread failed");
-      abort();
-    }
-  }
+  poll_send_thread_id = pthread_self();
+  // register quit signal
+  signal(SIGQUIT, quit_thread);
+
+  PollSendCq(500);
 }
 
 void RdmaEvent::PollRecvThreadFunc() {
   RDMA_INFO("poll recv thread for {} start", ip_);
+  poll_recv_thread_id = pthread_self();
   while (1) {
     int ret = PollRecvCq(500);
     if (ret == 1) {
@@ -123,32 +122,7 @@ void RdmaEvent::PollRecvThreadFunc() {
 }
 
 int RdmaEvent::PollSendCq(int timeout) {
-  struct pollfd pfds[2];
-  pfds[0].fd = kill_send_fd_;
-  pfds[0].events = POLLIN;
-  pfds[0].revents = 0;
-  pfds[1].fd = send_fd_;
-  pfds[1].events = POLLOUT;
-  pfds[1].revents = 0;
-
-  int ret = 0;
-  do {
-    ret = poll(pfds, 2, 500);
-    if (ret == -1) {
-      RDMA_ERROR("poll error: {}", strerror(errno));
-      return -1;
-    }
-    RDMA_TRACE("poll {} {}", pfds[0].revents, pfds[1].revents);
-  } while (ret == 0 || (ret == -1 && errno == EINTR));
-
-  if (pfds[0].revents & POLLIN) {
-    RDMA_INFO("kill send poll thread {}", ip_);
-    EventfdConsume(pfds[0].fd);
-    close(pfds[0].fd);
-    return 1;
-  }
-
-  if (pfds[1].revents & POLLOUT) {
+  while (1) {
     ibv_cq *ev_cq;
     void *ev_ctx;
     if (ibv_get_cq_event(send_cq_channel_, &ev_cq, &ev_ctx) < 0) {

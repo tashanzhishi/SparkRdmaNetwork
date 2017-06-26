@@ -300,7 +300,7 @@ void test_thread() {
   test t;
   sleep(1);
 }
-
+*/
 
 #include <thread>
 #include <functional>
@@ -313,12 +313,14 @@ public:
   ~test() {}
   void run() {
     vi_func f = bind(&test::thread_func, this, std::placeholders::_1);
-    for (int i = 0; i < 5; ++i) {
+    for (int i = 0; i < 1; ++i) {
       pool_.submit(bind(f, i));
     }
   }
   void thread_func(int a) {
     cout << a << " thread " << this_thread::get_id() << endl;
+    sleep(10);
+    cout << "hehe" << endl;
   }
   static boost::basic_thread_pool pool_;
 };
@@ -328,10 +330,10 @@ void test_boost_thread_pool() {
   test x, y;
   x.run();
   y.run();
-  test::pool_.close();
+  //test::pool_.close();
 }
 
-
+/*
 #include <thread>
 #include <memory>
 thread x;
@@ -473,14 +475,11 @@ int main(int argc, char *argv[]) {
   //test_while();
   //test_function();
   //test_thread();
-  //test_boost_thread_pool();
+  test_boost_thread_pool();
   //test_local_queue();
   //test_boost_lock_free();
   //test_class_array();
   //test_singleton_class();
-  int port = 6666;
-  uint16_t hehe = (uint16_t)port;
-  cout << hehe << endl;
 
   return 0;
 }
