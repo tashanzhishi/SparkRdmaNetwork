@@ -27,7 +27,7 @@ RdmaInfiniband::CompletionQueue::CompletionQueue(RdmaInfiniband &infiniband, int
   recv_cq_channel_ = ibv_create_comp_channel(infiniband.device_.ctx_);
   GPR_ASSERT(recv_cq_channel_);
 
-  send_cq_ = ibv_create_cq(infiniband.device_.ctx_, min_cqe, nullptr, nullptr, 0);
+  send_cq_ = ibv_create_cq(infiniband.device_.ctx_, min_cqe, nullptr, send_cq_channel_, 0);
   GPR_ASSERT(send_cq_);
 
   recv_cq_ = ibv_create_cq(infiniband.device_.ctx_, min_cqe, nullptr, recv_cq_channel_, 0);
@@ -43,14 +43,7 @@ RdmaInfiniband::CompletionQueue::CompletionQueue(RdmaInfiniband &infiniband, int
     abort();
   }
 
-  int flags = fcntl(send_cq_channel_->fd, F_GETFL);
-  if (fcntl(send_cq_channel_->fd, F_SETFL, flags|O_NONBLOCK) < 0) {
-    RDMA_ERROR("Failed to change file descriptor of Completion Event Channel");
-    abort();
-  }
-  RDMA_DEBUG("send_cq_channel->fd = {}", send_cq_channel_->fd);
-
-  flags = fcntl(recv_cq_channel_->fd, F_GETFL);
+  int flags = fcntl(recv_cq_channel_->fd, F_GETFL);
   if (fcntl(recv_cq_channel_->fd, F_SETFL, flags|O_NONBLOCK) < 0) {
     RDMA_ERROR("Failed to change file descriptor of Completion Event Channel");
     abort();

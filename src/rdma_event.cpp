@@ -151,8 +151,8 @@ int RdmaEvent::PollSendCq(int timeout) {
           RDMA_ERROR("ibv_poll_cq error, {}", QueuePair::WcStatusToString(wc.status));
           abort();
         }
-        if (wc.opcode != IBV_WC_SEND || wc.opcode != IBV_WC_RDMA_READ) {
-          RDMA_ERROR("all poll event must be send or rdma read");
+        if (wc.opcode != IBV_WC_SEND && wc.opcode != IBV_WC_RDMA_READ) {
+          RDMA_ERROR("all poll event must be send or rdma read, {}", (int)wc.opcode);
           abort();
         }
         BufferDescriptor *bd = (BufferDescriptor*)wc.wr_id;
@@ -309,10 +309,10 @@ void RdmaEvent::HandleRecvDataEvent() {
     uint8_t *copy_buff = bd->buffer_ + sizeof(RdmaDataHeader);
     int copy_len = data_len - sizeof(RdmaDataHeader);
 
-    /*jbyteArray jba = jni_alloc_byte_array(copy_len);
+    jbyteArray jba = jni_alloc_byte_array(copy_len);
     set_byte_array_region(jba, 0, copy_len, copy_buff);
-    jni_channel_callback(ip_.c_str(), jba, copy_len);*/
-    RDMA_INFO("recv buffer {}+{}: {}", (char*)copy_buff,(char*)copy_buff+copy_len-6, copy_len);
+    jni_channel_callback(ip_.c_str(), jba, copy_len);
+    //RDMA_INFO("recv buffer {}+{}: {}", (char*)copy_buff,(char*)copy_buff+copy_len-6, copy_len);
 
     if (header->data_type == TYPE_SMALL_DATA) {
       bd->bytes_ = k1KB;
