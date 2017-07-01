@@ -295,6 +295,10 @@ void RdmaEvent::HandleRecvDataEvent() {
   RDMA_DEBUG("start a handle recv event thread for {}", ip_);
   while (1) {
     BufferDescriptor *bd = nullptr;
+
+    struct timeval start, end;
+    gettimeofday(&start, nullptr);
+
     uint32_t data_id = recv_data_id_;
     {
       std::lock_guard<std::mutex> lock(recv_data_lock_);
@@ -307,6 +311,9 @@ void RdmaEvent::HandleRecvDataEvent() {
       recv_data_.erase(data_id);
     }
 
+    gettimeofday(&end, nullptr);
+    long get_lock_time = cost_time(start, end);
+
     RdmaDataHeader *header = (RdmaDataHeader*)bd->buffer_;
     uint32_t data_len = header->data_len;
     RDMA_DEBUG("handle recv data {}:{}:{}", ip_, data_id, data_len);
@@ -314,18 +321,20 @@ void RdmaEvent::HandleRecvDataEvent() {
     uint8_t *copy_buff = bd->buffer_ + sizeof(RdmaDataHeader);
     int copy_len = data_len - sizeof(RdmaDataHeader);
 
-    struct timeval start1, end1, start2, end2, start3, end3;
-    gettimeofday(&start1, nullptr);
+    gettimeofday(&start, nullptr);
     jbyteArray jba = jni_alloc_byte_array(copy_len);
-    gettimeofday(&end1, nullptr);
-    gettimeofday(&start2, nullptr);
+    gettimeofday(&end, nullptr);
+    long alloc_time = cost_time(start, end);
+    gettimeofday(&start, nullptr);
     set_byte_array_region(jba, 0, copy_len, copy_buff);
-    gettimeofday(&end2, nullptr);
-    gettimeofday(&start3, nullptr);
+    gettimeofday(&end, nullptr);
+    long copy_jvm_time = cost_time(start, end);
+    gettimeofday(&start, nullptr);
     jni_channel_callback(ip_.c_str(), jba, copy_len);
-    gettimeofday(&end3, nullptr);
-    RDMA_INFO("{} alloc copy channleRead, {} {} {} {} {}",
-              ip_, data_id, copy_len, cost_time(start1, end1), cost_time(start2, end2), cost_time(start3, end3));
+    gettimeofday(&end, nullptr);
+    long channel_read_time = cost_time(start, end);
+    RDMA_INFO("{} alloc copy channleRead {} {} {} {} {} {}",
+              ip_, data_id, copy_len, get_lock_time, alloc_time, copy_jvm_time, channel_read_time);
     //RDMA_INFO("recv buffer {}+{}: {}", (char*)copy_buff,(char*)copy_buff+copy_len-6, copy_len);
 
     if (header->data_type == TYPE_SMALL_DATA) {
