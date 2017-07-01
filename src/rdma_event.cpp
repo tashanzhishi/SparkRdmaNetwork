@@ -324,8 +324,8 @@ void RdmaEvent::HandleRecvDataEvent() {
     gettimeofday(&start3, nullptr);
     jni_channel_callback(ip_.c_str(), jba, copy_len);
     gettimeofday(&end3, nullptr);
-    RDMA_INFO("alloc copy channleRead, {} {} {} {}",
-              cost_time(start1, end1), cost_time(start2, end2), cost_time(start3, end3), copy_len);
+    RDMA_INFO("{} alloc copy channleRead, {} {} {} {} {}",
+              ip_, data_id, copy_len, cost_time(start1, end1), cost_time(start2, end2), cost_time(start3, end3));
     //RDMA_INFO("recv buffer {}+{}: {}", (char*)copy_buff,(char*)copy_buff+copy_len-6, copy_len);
 
     if (header->data_type == TYPE_SMALL_DATA) {
