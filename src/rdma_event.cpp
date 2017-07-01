@@ -11,6 +11,7 @@
 #include <pthread.h>
 #include <signal.h>
 #include <infiniband/verbs.h>
+#include <sys/time.h>
 
 #include <queue>
 
@@ -286,6 +287,10 @@ int RdmaEvent::PollRecvCq(int timeout) {
   return 0;
 }
 
+inline long cost_time(struct timeval& start, struct timeval& end) {
+  return (end.tv_sec - start.tv_sec)*1000000 + end.tv_usec - start.tv_usec;
+}
+
 void RdmaEvent::HandleRecvDataEvent() {
   RDMA_DEBUG("start a handle recv event thread for {}", ip_);
   while (1) {
@@ -309,9 +314,18 @@ void RdmaEvent::HandleRecvDataEvent() {
     uint8_t *copy_buff = bd->buffer_ + sizeof(RdmaDataHeader);
     int copy_len = data_len - sizeof(RdmaDataHeader);
 
+    struct timeval start1, end1, start2, end2, start3, end3;
+    gettimeofday(&start1, nullptr);
     jbyteArray jba = jni_alloc_byte_array(copy_len);
+    gettimeofday(&end1, nullptr);
+    gettimeofday(&start2, nullptr);
     set_byte_array_region(jba, 0, copy_len, copy_buff);
+    gettimeofday(&end2, nullptr);
+    gettimeofday(&start3, nullptr);
     jni_channel_callback(ip_.c_str(), jba, copy_len);
+    gettimeofday(&end3, nullptr);
+    RDMA_INFO("alloc copy channleRead, {} {} {}",
+              cost_time(start1, end1), cost_time(start2, end2), cost_time(start3, end3));
     //RDMA_INFO("recv buffer {}+{}: {}", (char*)copy_buff,(char*)copy_buff+copy_len-6, copy_len);
 
     if (header->data_type == TYPE_SMALL_DATA) {

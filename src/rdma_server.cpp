@@ -26,15 +26,14 @@ int RdmaServer::InitServer(const char *host, uint16_t port) {
 
 void RdmaServer::DestroyServer() {
   RDMA_INFO("destroy server and will free all resource");
-
-  RdmaMemoryPool::GetMemoryPool()->destory();
+  RdmaChannel::DestroyAllChannel();
 
   int listen_fd = server_->get_socket_fd();
   shutdown(listen_fd, SHUT_RDWR);
   close(listen_fd);
   delete server_;
 
-  RdmaChannel::DestroyAllChannel();
+  RdmaMemoryPool::GetMemoryPool()->destory();
 
   //delete RdmaInfiniband::GetRdmaInfiniband();
 }
