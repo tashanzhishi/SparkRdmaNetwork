@@ -32,6 +32,7 @@ void RdmaServer::DestroyServer() {
   shutdown(listen_fd, SHUT_RDWR);
   close(listen_fd);
   delete server_;
+  server_ = nullptr;
 
   RdmaMemoryPool::GetMemoryPool()->destory();
 
@@ -46,7 +47,7 @@ int RdmaServer::InitServerSocket(const char *host, uint16_t port) {
   server_->Socket();
   server_->Bind();
   server_->Listen();
-  std::function<void(const char*, uint16_t)> accept_func =
+  auto accept_func =
       std::bind(&RdmaServer::AcceptThreadFunc, this, std::placeholders::_1, std::placeholders::_2);
   AcceptThread = std::thread(accept_func, host, port);
   return 0;

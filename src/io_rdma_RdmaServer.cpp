@@ -15,7 +15,7 @@ static jclass RdmaChannelHandler = nullptr;
 static jmethodID channelRead0 = nullptr;
 static jobject rdmaChannelHandler = nullptr;
 
-static RdmaServer *server = nullptr;
+static RdmaServer server;
 
 /*
  * Class:     io_rdma_RdmaServer
@@ -49,8 +49,7 @@ JNIEXPORT jboolean JNICALL Java_io_rdma_RdmaServer_init (
 
   rdmaChannelHandler = env->NewGlobalRef(jrch);
 
-  server = new RdmaServer();
-  if (server->InitServer(host, port) < 0) {
+  if (server.InitServer(host, port) < 0) {
     RDMA_ERROR("InitServer failed");
     return 0;
   }
@@ -64,8 +63,8 @@ JNIEXPORT jboolean JNICALL Java_io_rdma_RdmaServer_init (
  */
 JNIEXPORT void JNICALL Java_io_rdma_RdmaServer_destroy
     (JNIEnv *env, jobject jobj) {
+  server.DestroyServer();
   RDMA_INFO("Java_io_rdma_RdmaServer_destroy");
-  server->DestroyServer();
 }
 
 

@@ -26,11 +26,11 @@ boost::basic_thread_pool RdmaEvent::thread_pool_(20);
 
 RdmaEvent::RdmaEvent(std::string ip, ibv_comp_channel *send_cq_channel, ibv_comp_channel *recv_cq_channel,
                      QueuePair *qp) {
-  kill_recv_fd_ = EventfdCreate();
+  /*kill_recv_fd_ = EventfdCreate();
   if (kill_recv_fd_ < 0) {
     RDMA_ERROR("create wakeup_fd failed");
     abort();
-  }
+  }*/
 
   ip_ = ip;
   recv_cq_channel_ = recv_cq_channel;
@@ -41,8 +41,8 @@ RdmaEvent::RdmaEvent(std::string ip, ibv_comp_channel *send_cq_channel, ibv_comp
   recv_runing_ = 0;
   recv_data_id_ = 1;
 
-  PollFunction poll_send_func = std::bind(&RdmaEvent::PollSendThreadFunc, this);
-  PollFunction poll_recv_func = std::bind(&RdmaEvent::PollRecvThreadFunc, this);
+  auto poll_send_func = std::bind(&RdmaEvent::PollSendThreadFunc, this);
+  auto poll_recv_func = std::bind(&RdmaEvent::PollRecvThreadFunc, this);
   thread_pool_.submit(poll_send_func);
   thread_pool_.submit(poll_recv_func);
 
@@ -88,8 +88,9 @@ int RdmaEvent::EventfdConsume(int fd) {
 }
 
 int RdmaEvent::KillPollThread() {
-  EventfdWakeup(kill_recv_fd_);
+  //EventfdWakeup(kill_recv_fd_);
   pthread_kill(poll_send_thread_id, SIGQUIT);
+  pthread_kill(poll_recv_thread_id, SIGQUIT);
   return 0;
 }
 
@@ -110,6 +111,8 @@ void RdmaEvent::PollSendThreadFunc() {
 void RdmaEvent::PollRecvThreadFunc() {
   RDMA_INFO("poll recv thread for {} start", ip_);
   poll_recv_thread_id = pthread_self();
+  signal(SIGQUIT, quit_thread);
+
   while (1) {
     int ret = PollRecvCq(500);
     if (ret == 1) {
@@ -165,7 +168,7 @@ int RdmaEvent::PollSendCq(int timeout) {
           delete bd;
         } else if (data_header->data_type == TYPE_BIG_DATA) {
           // send a ack to peer
-          RdmaRpc *ack = (RdmaRpc*)RMALLOC(sizeof(RdmaRpc));
+          RdmaRpc *ack = (RdmaRpc *)RMALLOC(sizeof(RdmaRpc));
           memset(ack, 0, sizeof(RdmaRpc));
           ack->data_type = TYPE_RPC_ACK;
           ack->data_id = data_header->data_id;
@@ -185,7 +188,7 @@ int RdmaEvent::PollSendCq(int timeout) {
             std::lock_guard<std::mutex> lock(recv_data_lock_);
             recv_data_[data_header->data_id] = bd;
             if (recv_runing_ == 0) {
-              HandleFunction handle = std::bind(&RdmaEvent::HandleRecvDataEvent, this);
+              auto handle = std::bind(&RdmaEvent::HandleRecvDataEvent, this);
               thread_pool_.submit(handle);
               recv_runing_ = 1;
               RDMA_DEBUG("submit a handle recv data thread");
@@ -266,7 +269,7 @@ int RdmaEvent::PollRecvCq(int timeout) {
             std::lock_guard<std::mutex> lock(recv_data_lock_);
             recv_data_[data_header->data_id] = bd;
             if (recv_runing_ == 0) {
-              HandleFunction handle = std::bind(&RdmaEvent::HandleRecvDataEvent, this);
+              auto handle = std::bind(&RdmaEvent::HandleRecvDataEvent, this);
               thread_pool_.submit(handle);
               recv_runing_ = 1;
               RDMA_DEBUG("submit a handle recv data thread");

@@ -19,7 +19,11 @@ namespace SparkRdmaNetwork {
 class RdmaServer {
  public:
   RdmaServer() : server_(nullptr) {}
-  ~RdmaServer() {};
+  ~RdmaServer() {
+    if (server_ != nullptr) {
+      DestroyServer();
+    }
+  };
 
   int InitServer(const char *host = nullptr, uint16_t port = kDefaultPort);
   void DestroyServer();
