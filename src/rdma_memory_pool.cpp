@@ -6,19 +6,7 @@
 
 namespace SparkRdmaNetwork {
 
-RdmaMemoryPool* RdmaMemoryPool::memory_pool_ = nullptr;
-std::size_t RdmaMemoryPool::RdmaAllocator::total_size = 0;
-
-RdmaMemoryPool::RdmaMemoryPool(ibv_pd *pd) {
-  pd_ = pd;
-}
-
-RdmaMemoryPool* RdmaMemoryPool::InitMemoryPool(ibv_pd *pd) {
-  if (memory_pool_ == nullptr) {
-    memory_pool_ = new RdmaMemoryPool(pd);
-  }
-  return memory_pool_;
-}
+static std::atomic_ulong kMemorySize = 0;
 
 void* RdmaMemoryPool::malloc(std::size_t len) {
   if (len < k1KB) {
@@ -29,7 +17,10 @@ void* RdmaMemoryPool::malloc(std::size_t len) {
     return FastAllocator32KB::allocate(len2num(len, k32KB));
   } else if (len < k32MB) {
     return FastAllocator1MB::allocate(len2num(len, k1MB));
-  } else if (len < kMaxSize) {
+  } else if (len < kAllocateSize) {
+    while (kMemorySize + (uint64_t)len > kMaxMemorySize) {
+      usleep(1000);
+    }
     return FastAllocator32MB::allocate(len2num(len, k32MB));
   } else {
     RDMA_ERROR("rdma allocate {}, is so big", len);
@@ -46,7 +37,8 @@ void RdmaMemoryPool::free(void *ptr, std::size_t len) {
     FastAllocator32KB::deallocate((Chunk32KB *) ptr, len2num(len, k32KB));
   } else if (len < k32MB) {
     FastAllocator1MB::deallocate((Chunk1MB *) ptr, len2num(len, k1MB));
-  } else if (len < kMaxSize) {
+  } else if (len < kMaxMemorySize) {
+    kMemorySize -= len;
     FastAllocator32MB::deallocate((Chunk32MB *) ptr, len2num(len, k32MB));
   } else {
     RDMA_ERROR("rdma deallocate {}, is so big", len);
@@ -54,12 +46,18 @@ void RdmaMemoryPool::free(void *ptr, std::size_t len) {
   }
 }
 
-void RdmaMemoryPool::destory() {
-  FreePool32B::purge_memory();
-  FreePool1KB::purge_memory();
-  FreePool32KB::purge_memory();
-  FreePool1MB::purge_memory();
-  FreePool32MB::purge_memory();
+void RdmaMemoryPool::init() {
+  RDMA_INFO("init memory pool");
+  uint8_t *buf;
+  buf = (uint8_t*)RMALLOC(k32B);  RFREE(buf, k32B);
+  buf = (uint8_t*)RMALLOC(k1KB);  RFREE(buf, k1KB);
+  buf = (uint8_t*)RMALLOC(k32KB); RFREE(buf, k32KB);
+  buf = (uint8_t*)RMALLOC(k1MB);  RFREE(buf, k1MB);
+  buf = (uint8_t*)RMALLOC(k32MB); RFREE(buf, k32MB);
+}
+
+void RdmaMemoryPool::try_release() {
+  FreePool32MB::release_memory();
 }
 
 ibv_mr* RdmaMemoryPool::get_mr_from_addr(void *const addr) {
@@ -80,6 +78,35 @@ ibv_mr* RdmaMemoryPool::get_mr_from_addr(void *const addr) {
   }
   return addr2mr_.at(head).second;
 }
+
+void RdmaMemoryPool::HandleRegister(void *addr, std::size_t len) {
+  ibv_mr *mr = ibv_reg_mr(pd_, addr, len, kRdmaMemoryFlag);
+  GPR_ASSERT(mr);
+  {
+    WriteLock lock(lock_);
+    addr_set_.insert(addr);
+    addr2mr_[addr] = std::pair<std::size_t, ibv_mr*>(len, mr);
+  }
+  RDMA_INFO("register {} bytes success", len);
+}
+
+void RdmaMemoryPool::HandleUnregister(void *const addr) {
+  if (ibv_dereg_mr(get_mr_from_addr(addr)) != 0) {
+    RDMA_ERROR("ibv_dereg_mr error: {}", strerror(errno));
+    abort();
+  }
+  WriteLock lock(lock_);
+  if (addr_set_.find(addr) == addr_set_.end()) {
+    RDMA_ERROR("free faild, because the addr not exist in addr_set");
+    abort();
+  }
+  addr_set_.erase(addr);
+  addr2mr_.erase(addr);
+}
+
+
+
+
 
 void RdmaMemoryPool::print_set() {
   std::cout << "address set: \n";

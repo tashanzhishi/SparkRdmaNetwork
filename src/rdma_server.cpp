@@ -18,8 +18,7 @@ int RdmaServer::InitServer(const char *host, uint16_t port) {
   }
   RDMA_INFO("init server {}:{}", host, port);
 
-  RdmaInfiniband *infiniband = RdmaInfiniband::GetRdmaInfiniband();
-  INIT_MEMORY_POOL();
+  RdmaInfiniband::get_infiniband();
   InitServerSocket(host, port);
   return 0;
 }
@@ -34,9 +33,7 @@ void RdmaServer::DestroyServer() {
   delete server_;
   server_ = nullptr;
 
-  RdmaMemoryPool::GetMemoryPool()->destory();
-
-  //delete RdmaInfiniband::GetRdmaInfiniband();
+  //RdmaMemoryPool::GetMemoryPool()->try_release();
 }
 
 int RdmaServer::InitServerSocket(const char *host, uint16_t port) {

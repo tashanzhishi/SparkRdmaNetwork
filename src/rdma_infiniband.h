@@ -183,15 +183,10 @@ public:
     uint32_t init_psn_;
   };
 
-
-  static RdmaInfiniband* GetRdmaInfiniband() {
-    if (infiniband_ == nullptr) {
-      std::lock_guard<std::mutex> lock(lock_);
-      if (infiniband_ == nullptr)
-        infiniband_ = new RdmaInfiniband();
-    }
-    return infiniband_;
-  };
+  static RdmaInfiniband* get_infiniband() {
+    static RdmaInfiniband infiniband;
+    return &infiniband;
+  }
 
   // classs function
   CompletionQueue* CreateCompleteionQueue(int min_cqe = kMinCqe);
@@ -203,14 +198,14 @@ public:
                              uint32_t max_send_wr = kMaxWr, uint32_t max_recv_wr = kMaxWr);
 
 private:
-  static RdmaInfiniband *infiniband_;
-  static std::mutex lock_;
-
   RdmaInfiniband();
   ~RdmaInfiniband();
 
   Device device_;
   ProtectionDomain pd_;
+
+  RdmaInfiniband(const RdmaInfiniband&) = delete;
+  RdmaInfiniband& operator=(const RdmaInfiniband&) = delete;
 };
 
 

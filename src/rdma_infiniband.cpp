@@ -12,9 +12,6 @@
 
 namespace SparkRdmaNetwork {
 
-std::mutex RdmaInfiniband::lock_;
-RdmaInfiniband* RdmaInfiniband::infiniband_ = nullptr;
-
 // -------------------
 // - CompletionQueue -
 // -------------------
@@ -447,7 +444,8 @@ const char* RdmaInfiniband::QueuePair::WcStatusToString(int status) {
 // ------------------
 RdmaInfiniband::RdmaInfiniband() : device_(), pd_(device_) {
   RDMA_TRACE("construct RdmaInfiniband");
-  RdmaMemoryPool::InitMemoryPool(pd_.pd_);
+  RdmaMemoryPool* pool = RdmaMemoryPool::GetMemoryPool(pd_.pd_);
+  pool->init();
 }
 
 RdmaInfiniband::~RdmaInfiniband() {

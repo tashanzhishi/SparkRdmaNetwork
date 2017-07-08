@@ -13,7 +13,7 @@
 #include <infiniband/verbs.h>
 #include <set>
 #include <utility>
-#include <map>
+#include <unordered_map>
 #include <iostream>
 
 #include "rdma_logger.h"
@@ -23,36 +23,30 @@
 #define RMALLOC(len) (RdmaMemoryPool::GetMemoryPool()->malloc(len))
 #define RFREE(ptr, len) (RdmaMemoryPool::GetMemoryPool()->free(ptr, len))
 #define GET_MR(ptr) (RdmaMemoryPool::GetMemoryPool()->get_mr_from_addr(ptr))
-#define INIT_MEMORY_POOL() do { \
-    uint8_t *buf = (uint8_t*)RMALLOC(k32B); RFREE(buf, k32B); \
-    buf = (uint8_t*)RMALLOC(k1KB); RFREE(buf, k1KB); \
-    buf = (uint8_t*)RMALLOC(k32KB); RFREE(buf, k32KB); \
-    buf = (uint8_t*)RMALLOC(k1MB); RFREE(buf, k1MB); \
-    buf = (uint8_t*)RMALLOC(k32MB); RFREE(buf, k32MB); \
-  } while (0)
 
-//#define ibv_pd void
-//#define ibv_mr void
+
 
 namespace SparkRdmaNetwork {
 
 const std::size_t k32B = 32;
-const std::size_t kInitSize32B = 32 * 1024;
-//const std::size_t kInitSize32B = 32;
+const std::size_t kInitSize32B = 64 * 1024;
 
 const std::size_t k1KB = 1024;
-const std::size_t kInitSize1KB = 8 * 1024;
+const std::size_t kInitSize1KB = 64 * 1024;
 
 const std::size_t k32KB = 32 * 1024;
 const std::size_t kInitSize32KB = 1024;
 
 const std::size_t k1MB = 1024 * 1024;
-const std::size_t kInitSize1MB = 32;
+const std::size_t kInitSize1MB = 128;
 
 const std::size_t k32MB = 32 * 1024 * 1024;
-const std::size_t kInitSize32MB = 2;
+const std::size_t kInitSize32MB = 128;
 
-const std::size_t kMaxSize = 2 * 1024 * 1024 * 1024;
+// 单次allocate
+const std::size_t kAllocateSize = (std::size_t)2*1024*1024*1024;
+// 总内存阈值
+const std::size_t kMaxMemorySize = (std::size_t)16 * 1024 * 1024 * 1024;
 
 inline std::size_t len2num(std::size_t len, std::size_t size) {
   return (len + size - 1) / size;
@@ -63,12 +57,16 @@ inline std::size_t len2num(std::size_t len, std::size_t size) {
 // this is a singleton instance class
 class RdmaMemoryPool {
 public:
-  static RdmaMemoryPool* InitMemoryPool(ibv_pd *pd);
-  static inline RdmaMemoryPool* GetMemoryPool() { return memory_pool_; };
+  static RdmaMemoryPool* GetMemoryPool(ibv_pd *pd = nullptr) {
+    static RdmaMemoryPool memory_pool(pd);
+    return &memory_pool;
+  };
 
   void *malloc(std::size_t len);
   void free(void *ptr, std::size_t len);
-  void destory();
+
+  void init();
+  void try_release();
   ibv_mr* get_mr_from_addr(void * const addr);
 
   // test function
@@ -81,41 +79,19 @@ private:
   struct RdmaAllocator {
     typedef std::size_t size_type;
     typedef std::ptrdiff_t difference_type;
-    static size_type total_size;
 
     static char *malloc(const size_type bytes) {
       RDMA_INFO("register memory {} bytes", bytes);
+      RdmaMemoryPool *pool = GetMemoryPool();
       char *addr = static_cast<char *>((std::malloc)(bytes));
-      ibv_mr *mr = ibv_reg_mr(memory_pool_->pd_, addr, bytes, kRdmaMemoryFlag);
-      if (mr == nullptr) {
-        RDMA_ERROR("ibv_reg_mr error");
-        abort();
-      }
-      RDMA_DEBUG("addr->mr->lkey: {} {} {}", (void*)addr, (void*)mr, mr->lkey);
-      {
-        WriteLock lock(memory_pool_->lock_);
-        memory_pool_->addr_set_.insert((void*)addr);
-        memory_pool_->addr2mr_[(void*)addr] = std::pair<std::size_t, ibv_mr*>(bytes, mr);
-      }
-      RDMA_INFO("register {} bytes success", bytes);
+      pool->HandleRegister(addr, bytes);
       return addr;
     }
 
     static void free(char *const block) {
       RDMA_INFO("deregister memory");
-      if (ibv_dereg_mr(memory_pool_->get_mr_from_addr(block)) != 0) {
-        RDMA_ERROR("ibv_dereg_mr error: {}", strerror(errno));
-        abort();
-      }
-      {
-        WriteLock lock(memory_pool_->lock_);
-        if (memory_pool_->addr_set_.find(block) == memory_pool_->addr_set_.end()) {
-          RDMA_ERROR("free faild, because the addr not exist in addr_set");
-          abort();
-        }
-        memory_pool_->addr_set_.erase(block);
-        memory_pool_->addr2mr_.erase(block);
-      }
+      RdmaMemoryPool *pool = GetMemoryPool();
+      pool->HandleUnregister(block);
       (std::free)(block);
     }
   };
@@ -148,22 +124,32 @@ private:
   typedef boost::singleton_pool<boost::fast_pool_allocator_tag, sizeof(Chunk1MB),
       RdmaAllocator, boost::details::pool::default_mutex, kInitSize1MB, 0> FreePool1MB;
 
+  // 每次按Chunk32MB*kInitSize32MB扩容
   typedef boost::fast_pool_allocator<Chunk32MB, RdmaAllocator,
-      boost::details::pool::default_mutex, kInitSize32MB, 0> FastAllocator32MB;
+      boost::details::pool::default_mutex, kInitSize32MB, 1> FastAllocator32MB;
   typedef boost::singleton_pool<boost::fast_pool_allocator_tag, sizeof(Chunk32MB),
-      RdmaAllocator, boost::details::pool::default_mutex, kInitSize32MB, 0> FreePool32MB;
+      RdmaAllocator, boost::details::pool::default_mutex, kInitSize32MB, 1> FreePool32MB;
 
 
-  RdmaMemoryPool(ibv_pd *pd);
-  ~RdmaMemoryPool();
-
-  static RdmaMemoryPool *memory_pool_;
+  RdmaMemoryPool(ibv_pd *pd) : pd_(pd) {
+    if (pd == nullptr)
+      RDMA_ERROR("pd must be not NULL");
+  };
+  ~RdmaMemoryPool() {
+    FreePool32B::purge_memory();
+    FreePool1KB::purge_memory();
+    FreePool32KB::purge_memory();
+    FreePool1MB::purge_memory();
+    FreePool32MB::purge_memory();
+  };
+  void HandleRegister(void *addr, std::size_t len);
+  void HandleUnregister(void *const addr);
 
   ibv_pd *pd_;
   boost::shared_mutex lock_;
   // descending sort of set, can use lower_bound to get the head addr who is the last less than addr
   std::set<void*, std::greater<void*>> addr_set_;
-  std::map<void*, std::pair<std::size_t, ibv_mr*>> addr2mr_;
+  std::unordered_map<void*, std::pair<std::size_t, ibv_mr*>> addr2mr_;
 
   // no copy and =
   RdmaMemoryPool(RdmaMemoryPool &) = delete;

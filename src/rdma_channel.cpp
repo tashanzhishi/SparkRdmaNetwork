@@ -136,7 +136,7 @@ int RdmaChannel::SendMsg(const char *host, uint16_t port, uint8_t *msg, uint32_t
 
 int RdmaChannel::InitChannel(std::shared_ptr<RdmaSocket> socket, bool is_accept) {
   RDMA_DEBUG("start InitChannel of {}", ip_);
-  RdmaInfiniband *infiniband = RdmaInfiniband::GetRdmaInfiniband();
+  RdmaInfiniband *infiniband = RdmaInfiniband::get_infiniband();
 
   {
     std::lock_guard<std::mutex> lock(channel_lock_);

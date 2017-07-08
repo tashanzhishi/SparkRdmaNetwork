@@ -186,7 +186,7 @@ void test_rw_lock() {
     cout << kv.first << " " << kv.second << endl;
   }
 }
-
+*/
 
 #include <atomic>
 #include <thread>
@@ -198,6 +198,7 @@ void test_atomic_thread_func() {
   for (uint32_t i = 0; i < 1000; ++i) {
     x = static_cast<uint32_t>(add);
     y = atomic_fetch_add(&add, (uint32_t)1);
+    //add += 10;
     if (x != y) {
       cout << "hehe" << endl;
     }
@@ -215,7 +216,7 @@ void test_atomic() {
   int x = static_cast<int>(add);
   cout << add << " " << x << endl;
 }
-
+/*
 class tx {
 public:
   tx(){}
@@ -456,7 +457,7 @@ void test_singleton_class() {
   instance->print();
   delete instance;
 };
-*/
+
 
 #include <memory>
 class testA {
@@ -485,7 +486,7 @@ public:
 void test_shared_ptr() {
   testB x;
 }
-
+*/
 
 int main(int argc, char *argv[]) {
   //test1();
@@ -497,7 +498,7 @@ int main(int argc, char *argv[]) {
   //test_class_lock();
   //for (auto &kv : ip2int)
   //  cout << kv.first << " " << kv.second << endl;
-  //test_atomic();
+  test_atomic();
   //test_map();
   //test_vector();
   //test_while();
@@ -508,7 +509,7 @@ int main(int argc, char *argv[]) {
   //test_boost_lock_free();
   //test_class_array();
   //test_singleton_class();
-  test_shared_ptr();
+  //test_shared_ptr();
 
   return 0;
 }
