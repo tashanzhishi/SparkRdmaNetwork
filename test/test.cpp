@@ -300,7 +300,7 @@ void test_thread() {
   test t;
   sleep(1);
 }
-*/
+
 
 #include <thread>
 #include <functional>
@@ -333,7 +333,7 @@ void test_boost_thread_pool() {
   //test::pool_.close();
 }
 
-/*
+
 #include <thread>
 #include <memory>
 thread x;
@@ -458,6 +458,34 @@ void test_singleton_class() {
 };
 */
 
+#include <memory>
+class testA {
+public:
+  testA(string x) {
+    len = x.length();
+    a = new char[len];
+    strcpy(a, x.c_str());
+  }
+  ~testA() {
+    delete[] a;
+    cout << "free" << endl;
+  }
+  void print(){ cout << a << endl; }
+  char *a;
+  int len;
+};
+class testB {
+public:
+  testB() {
+    array = shared_ptr<testA>(new testA("wangyuanbo"));
+    array->print();
+  }
+  shared_ptr<testA> array;
+};
+void test_shared_ptr() {
+  testB x;
+}
+
 
 int main(int argc, char *argv[]) {
   //test1();
@@ -475,11 +503,12 @@ int main(int argc, char *argv[]) {
   //test_while();
   //test_function();
   //test_thread();
-  test_boost_thread_pool();
+  //test_boost_thread_pool();
   //test_local_queue();
   //test_boost_lock_free();
   //test_class_array();
   //test_singleton_class();
+  test_shared_ptr();
 
   return 0;
 }

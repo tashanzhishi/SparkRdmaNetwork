@@ -44,17 +44,23 @@ namespace SparkRdmaNetwork {
   // this is a singleton instance class
   class RdmaLogger {
   public:
-    static LoggerSharedPtr get_rdma_logger();
+    static LoggerSharedPtr& get_rdma_logger() {
+      static RdmaLogger logger(spdlog::level::info);
+      return logger.rdma_logger_;
+    }
 
   private:
-    RdmaLogger(LoggerLevel level);
+    RdmaLogger(LoggerLevel level) {
+      spdlog::set_pattern("%Y-%m-%d %T.%e %l %t %v");
+      rdma_logger_ = spdlog::stderr_logger_mt("rdma");
+      rdma_logger_->set_level(level);
+    }
 
-    static LoggerSharedPtr rdma_logger_;
-    static std::mutex lock_;
+    LoggerSharedPtr rdma_logger_;
 
     // no copy and =
-    RdmaLogger(const RdmaLogger &) = delete;
-    RdmaLogger &operator=(const RdmaLogger &) = delete;
+    RdmaLogger(const RdmaLogger&) = delete;
+    RdmaLogger& operator=(const RdmaLogger&) = delete;
   };
 
 }
