@@ -6,7 +6,7 @@
 
 namespace SparkRdmaNetwork {
 
-static std::atomic_ulong kMemorySize = 0;
+static std::atomic_ulong kMemorySize(0);
 
 void* RdmaMemoryPool::malloc(std::size_t len) {
   if (len < k1KB) {

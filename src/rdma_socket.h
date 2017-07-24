@@ -21,7 +21,7 @@
 
 namespace SparkRdmaNetwork {
 
-const int kIpCharSize = 32;
+const int kIpCharSize = 100;
 const std::string kIsServer("SERVER");
 const std::string kLocalIp("localhost_");
 
