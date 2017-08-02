@@ -18,9 +18,9 @@ void* RdmaMemoryPool::malloc(std::size_t len) {
   } else if (len < k32MB) {
     return FastAllocator1MB::allocate(len2num(len, k1MB));
   } else if (len < kAllocateSize) {
-    while (kMemorySize + (uint64_t)len > kMaxMemorySize) {
+    /*while (kMemorySize + (uint64_t)len > kMaxMemorySize) {
       usleep(1000);
-    }
+    }*/
     return FastAllocator32MB::allocate(len2num(len, k32MB));
   } else {
     RDMA_ERROR("rdma allocate {}, is so big", len);
