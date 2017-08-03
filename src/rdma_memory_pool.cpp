@@ -7,6 +7,7 @@
 namespace SparkRdmaNetwork {
 
 static std::atomic_ulong kMemorySize(0);
+RdmaMemoryPool* RdmaMemoryPool::memory_pool_ = nullptr;
 
 void* RdmaMemoryPool::malloc(std::size_t len) {
   if (len < k1KB) {
@@ -38,7 +39,7 @@ void RdmaMemoryPool::free(void *ptr, std::size_t len) {
   } else if (len < k32MB) {
     FastAllocator1MB::deallocate((Chunk1MB *) ptr, len2num(len, k1MB));
   } else if (len < kMaxMemorySize) {
-    kMemorySize -= len;
+    //kMemorySize -= len;
     FastAllocator32MB::deallocate((Chunk32MB *) ptr, len2num(len, k32MB));
   } else {
     RDMA_ERROR("rdma deallocate {}, is so big", len);
@@ -54,6 +55,14 @@ void RdmaMemoryPool::init() {
   buf = (uint8_t*)RMALLOC(k32KB); RFREE(buf, k32KB);
   buf = (uint8_t*)RMALLOC(k1MB);  RFREE(buf, k1MB);
   buf = (uint8_t*)RMALLOC(k32MB); RFREE(buf, k32MB);
+}
+
+void RdmaMemoryPool::destory() {
+  FreePool32B::purge_memory();
+  FreePool1KB::purge_memory();
+  FreePool32KB::purge_memory();
+  FreePool1MB::purge_memory();
+  FreePool32MB::purge_memory();
 }
 
 void RdmaMemoryPool::try_release() {

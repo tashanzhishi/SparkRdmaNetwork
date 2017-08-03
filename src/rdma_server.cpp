@@ -33,7 +33,7 @@ void RdmaServer::DestroyServer() {
   delete server_;
   server_ = nullptr;
 
-  //RdmaMemoryPool::GetMemoryPool()->try_release();
+  RdmaMemoryPool::GetMemoryPool()->destory();
 }
 
 int RdmaServer::InitServerSocket(const char *host, uint16_t port) {

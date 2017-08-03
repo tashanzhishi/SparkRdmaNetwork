@@ -57,16 +57,21 @@ inline std::size_t len2num(std::size_t len, std::size_t size) {
 // this is a singleton instance class
 class RdmaMemoryPool {
 public:
-  static RdmaMemoryPool* GetMemoryPool(ibv_pd *pd = nullptr) {
-    static RdmaMemoryPool memory_pool(pd);
-    return &memory_pool;
+  static RdmaMemoryPool* GetMemoryPool(ibv_pd *pd) {
+    if (memory_pool_ == NULL)
+      memory_pool_ = new RdmaMemoryPool(pd);
+    return memory_pool_;
   };
+  static inline RdmaMemoryPool* GetMemoryPool() {
+    return memory_pool_;
+  }
 
   void *malloc(std::size_t len);
   void free(void *ptr, std::size_t len);
 
   void init();
   void try_release();
+  void destory();
   ibv_mr* get_mr_from_addr(void * const addr);
 
   // test function
@@ -144,6 +149,8 @@ private:
   };
   void HandleRegister(void *addr, std::size_t len);
   void HandleUnregister(void *const addr);
+
+  static RdmaMemoryPool* memory_pool_;
 
   ibv_pd *pd_;
   boost::shared_mutex lock_;
