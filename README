@@ -1,1 +1,3 @@
 863内存计算项目，使用c++语言将Spark中的TCP替换成RDMA。
+吸取前面教训，使用boost pool来管理内存池，使用线程池来处理接收的数据，数据分为小数据块(<=1KB)和大数据块(>1KB)，小数据直接rdma send，大数据使用rdma read。
+对上层client端提供send接口，server端通过JNI调用spark内部处理函数。
